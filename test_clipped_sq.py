@@ -7,13 +7,7 @@ Created on Sat Feb 25 16:41:35 2017
 """
 
 import numpy as np
-import scipy.io as sio
 import tensorflow as tf
-import matplotlib.pyplot as plt
-import time
-import os
-import math
-
 
 FLOATING_TYPE = 'float32'
 TERMINATION_COND = math.pow(10, -6)
