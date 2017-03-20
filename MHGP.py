@@ -92,7 +92,7 @@ def Lower_bound(N, K, D, M, X, y, Z, mu, log_Sigma, log_sigma_f, log_tau):
         
     #KL = - (D_ * 0.5 + alpha) * tf.reduce_sum(tf.log(2 * beta + tf.reduce_sum(tf.square(mu) + Sigma_sq, 1))) + 0.5 * tf.reduce_sum(tf.log(Sigma_sq))
     
-    l_square = tf.reduce_sum(tf.square(mu) + Sigma_sq, 1) / D_
+    l_square = mu_Sigma_sq / D_
     
     return {'F1' : F, 'KL' : KL, 'l_square' : l_square, 'F012' : F012, 'F3' : F3, 'TrK' : TrK, 'La' : La, 'YPsi1InvLm' : YPsi1InvLm}
 
