@@ -8,7 +8,9 @@ Created on Sat Feb 25 16:41:35 2017
 
 import numpy as np
 import tensorflow as tf
+import matplotlib.pyplot as plt
 import sinc_2d
+from sklearn import preprocessing
 
 FLOATING_TYPE = 'float32'
 JITTER_VALUE = 1e-5
@@ -143,3 +145,26 @@ for i in range(Iter):
     _, new_obj = sess.run([train_step['train_op'], train_step['obj']], feed_dict)
     print(new_obj)
 
+W_hat = sess.run(mu)
+
+lsq_hat = sess.run(train_step['l_square'])
+
+idx_list = np.argsort(lsq_hat)[::-1]
+
+X_p_hat = np.matmul(data['X'], np.transpose(W_hat[idx_list[0:2], :]))
+
+min_max_scaler = preprocessing.MinMaxScaler()
+
+scaled_X_p_hat = min_max_scaler.fit_transform(-X_p_hat)
+scaled_X_p = min_max_scaler.fit_transform(data['X_p'])
+
+plt.scatter(scaled_X_p_hat[:, 0], data['Y'])
+plt.scatter(scaled_X_p[:, 1], data['Y'])
+
+plt.scatter(scaled_X_p_hat[:, 1], data['Y'])
+plt.scatter(scaled_X_p[:, 0], data['Y'])
+
+plt.scatter(X_p_hat[:, 0], np.sinc(X_p_hat[:, 0]))
+
+sim.show_fun()
+sim.show_Y()
