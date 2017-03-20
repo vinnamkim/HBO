@@ -1,0 +1,11 @@
+function [Y, X, W] = Sim_toy_sinc(N, D, d, sigma)
+    X = rand(N, D);
+    W = randn(1, D);
+    W(d+1:D) = 0;
+    
+    %[U, S, V] = svd(W);
+    %WW = S * V';
+    proj_X = X * W';
+    
+    Y = sinc(pi * proj_X) + sigma^2 * randn(N, 1);
+end
