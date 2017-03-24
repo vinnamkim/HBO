@@ -30,12 +30,13 @@ class sinc_2d:
                 'x2' : self.x2,
                 'Y' : self.Y}
         
-    def show_Y(self):
+    def show_Y(self, file_str = 'Y.png'):
         plt.figure()
         line1 = plt.scatter(self.X_p[:, 0], self.Y, label = 'x1')
         line2 = plt.scatter(self.X_p[:, 1], self.Y, label = 'x2')
         plt.legend(handles=[line1, line2])
         plt.show()
+        plt.savefig(file_str)
         return    
     def show_fun(self):
         plt.figure()

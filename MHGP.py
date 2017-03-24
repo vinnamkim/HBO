@@ -11,6 +11,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import sinc_2d
 from sklearn import preprocessing
+from sklearn import decomposition
 
 FLOATING_TYPE = 'float32'
 JITTER_VALUE = 1e-5
@@ -64,12 +65,11 @@ def Lower_bound(N, K, D, M, X, y, Z, mu, log_Sigma, log_sigma_f, log_tau):
     
     ## CHECK
     
-    
     Psi1InvLm = tf.transpose(tf.matrix_triangular_solve(Lm, tf.transpose(Psi1))) # N x M
     
     C = tf.matrix_triangular_solve(Lm, tf.transpose(tf.matrix_triangular_solve(Lm, Psi2))) # M x M
     
-    A = tau_sq * tf.eye(M) + sigma_f_sq * C # M x M
+    A = tau_sq * tf.eye(M) + sigma_f_sq * C + JITTER_VALUE * tf.eye(M) # M x M
     
     La = tf.cholesky(A) # M x M
     
@@ -105,9 +105,11 @@ def GP_train(N, K, D, M, X, y, Z, mu, log_Sigma, log_sigma_f, log_tau, learning_
     
     opt = tf.train.AdamOptimizer(learning_rate = learning_rate)
     
-    train_op = opt.minimize(OBJ_train)
+    train_op1 = opt.minimize(OBJ_train, var_list = [Z, mu, log_Sigma])
     
-    return {'train_op' : train_op, 'obj' : OBJ_train, 'l_square' : LB['l_square'], 'F1' : LB['F1'], 'KL' : LB['KL']}
+    train_op2 = opt.minimize(OBJ_train)
+    
+    return {'train_op1' : train_op1, 'train_op2' : train_op2, 'obj' : OBJ_train, 'l_square' : LB['l_square'], 'F1' : LB['F1'], 'KL' : LB['KL']}
 
 def reset_graph():
     if 'sess' in globals() and sess:
@@ -115,56 +117,96 @@ def reset_graph():
     tf.reset_default_graph()
     return
 
-N = 200
-D = 10
-M = 40
-K = 4
-Iter = 1000
-
-sim = sinc_2d.sinc_2d(N, D, 5, 0.01)
-data = sim.data()
-
-reset_graph()
-
-X = tf.placeholder(name = 'X', shape = [None, D], dtype = FLOATING_TYPE)
-y = tf.placeholder(name = 'Y', shape = [None, 1], dtype = FLOATING_TYPE)
-Z = tf.get_variable('Z', initializer = tf.random_uniform_initializer(), shape = [M, K], dtype = FLOATING_TYPE)
-mu = tf.get_variable('mu', initializer = tf.random_normal_initializer(), shape = [K, D], dtype = FLOATING_TYPE)
-log_Sigma = tf.get_variable('Sigma', initializer = tf.random_uniform_initializer(), shape = [K, D], dtype = FLOATING_TYPE)
-log_sigma_f = tf.get_variable('sigma_f', initializer = tf.random_uniform_initializer(), shape = [], dtype = FLOATING_TYPE)
-log_tau = tf.get_variable('sigma', initializer = tf.random_uniform_initializer(), shape = [], dtype = FLOATING_TYPE)
-
-train_step = GP_train(N, K, D, M, X, y, Z, mu, log_Sigma, log_sigma_f, log_tau, learning_rate = 1e-2)
-
-feed_dict = {X : data['X'], y : data['Y']}
-
-sess = tf.Session()
-sess.run(tf.global_variables_initializer())
-
-for i in range(Iter):
-    _, new_obj = sess.run([train_step['train_op'], train_step['obj']], feed_dict)
-    print(new_obj)
-
-W_hat = sess.run(mu)
-
-lsq_hat = sess.run(train_step['l_square'])
-
-idx_list = np.argsort(lsq_hat)[::-1]
-
-X_p_hat = np.matmul(data['X'], np.transpose(W_hat[idx_list[0:2], :]))
-
-min_max_scaler = preprocessing.MinMaxScaler()
-
-scaled_X_p_hat = min_max_scaler.fit_transform(-X_p_hat)
-scaled_X_p = min_max_scaler.fit_transform(data['X_p'])
-
-plt.scatter(scaled_X_p_hat[:, 0], data['Y'])
-plt.scatter(scaled_X_p[:, 1], data['Y'])
-
-plt.scatter(scaled_X_p_hat[:, 1], data['Y'])
-plt.scatter(scaled_X_p[:, 0], data['Y'])
-
-plt.scatter(X_p_hat[:, 0], np.sinc(X_p_hat[:, 0]))
-
-sim.show_fun()
-sim.show_Y()
+def main(N = 200, D = 10, M = 20, K = 4, Iter1 = 100, Iter2 = 500):
+    
+    sim = sinc_2d.sinc_2d(N, D, 5, 0.01)
+    data = sim.data()
+    
+    init_method = 'random'
+    init_value = {}
+    
+    if init_method is 'pca':
+        pca = decomposition.PCA(n_components = K)
+        pca.fit(data['X'])
+        init_value['mu'] = np.array(pca.components_, dtype = FLOATING_TYPE)
+    else:
+        init_value['mu'] = np.array(np.random.normal(size = [K, D]), dtype = FLOATING_TYPE)
+        
+    Mu = np.matmul(data['X'], np.transpose(init_value['mu']))
+    inputScales = 10 / np.square(np.max(Mu, axis = 0) - np.min(Mu, axis = 0))
+    
+    init_value['mu'] = init_value['mu'] * np.reshape(inputScales, [-1, 1])
+        
+    init_value['log_Sigma'] = 0.5 * np.log(1 / np.array(D, dtype = FLOATING_TYPE) + (0.001 / np.array(D, dtype = FLOATING_TYPE)) * np.random.normal(size = [K, D]))
+    
+    init_value['Z'] = np.matmul(data['X'], np.transpose(init_value['mu']))[np.random.permutation(N)[0:M], :]
+    
+    init_value['log_sigma_f'] = 0.5 * np.log(np.var(data['Y']))
+    
+    init_value['log_tau'] = 0.5 * np.log(np.var(data['Y']) / 100)
+    
+    reset_graph()
+    
+    X = tf.placeholder(name = 'X', shape = [N, D], dtype = FLOATING_TYPE)
+    y = tf.placeholder(name = 'Y', shape = [N, 1], dtype = FLOATING_TYPE)
+    Z = tf.get_variable('Z', initializer = tf.random_uniform_initializer(), shape = [M, K], dtype = FLOATING_TYPE)
+    mu = tf.get_variable('mu', initializer = tf.constant_initializer(init_value['mu']), shape = [K, D], dtype = FLOATING_TYPE)
+    log_Sigma = tf.get_variable('log_Sigma', initializer = tf.constant_initializer(init_value['log_Sigma']), shape = [K, D], dtype = FLOATING_TYPE)
+    log_sigma_f = tf.get_variable('log_sigma_f', initializer = tf.constant_initializer(init_value['log_sigma_f']), shape = [], dtype = FLOATING_TYPE)
+    log_tau = tf.get_variable('log_tau', initializer = tf.constant_initializer(init_value['log_tau']), shape = [], dtype = FLOATING_TYPE)
+    
+    train_step = GP_train(N, K, D, M, X, y, Z, mu, log_Sigma, log_sigma_f, log_tau, learning_rate = 1e-1)
+    
+    feed_dict = {X : data['X'], y : data['Y']}
+    
+    sess = tf.Session()
+    sess.run(tf.global_variables_initializer())
+    
+    for i in range(Iter1):
+        try:
+            _, new_obj = sess.run([train_step['train_op1'], train_step['obj']], feed_dict)
+            print(new_obj)
+        except:
+            break
+        
+    for i in range(Iter2):
+        try:
+            _, new_obj = sess.run([train_step['train_op2'], train_step['obj']], feed_dict)
+            print(new_obj)
+        except:
+            break
+    
+    sess.run(log_sigma_f)
+    sess.run(log_tau)
+    
+    W_hat = sess.run(mu)
+    
+    lsq_hat = sess.run(train_step['l_square'])
+    print(lsq_hat)
+    
+    idx_list = np.argsort(lsq_hat)[::-1]
+    
+    X_p_hat = np.matmul(data['X'], np.transpose(W_hat[idx_list, :]))
+    
+    min_max_scaler = preprocessing.MinMaxScaler()
+    
+    for i in range(2):
+        plt.figure(figsize = (8, 16))
+        scaled_X_p_hat = min_max_scaler.fit_transform(X_p_hat)
+        for j in range(K):
+            plt.subplot('42'+str(j))
+            proj = plt.scatter(scaled_X_p_hat[:, j], data['Y'], label = 'proj')
+            true = plt.scatter(scaled_X_p[:, i], data['Y'], label = 'true')
+            scaled_X_p_hat = min_max_scaler.fit_transform(X_p_hat)
+        scaled_X_p_hat = min_max_scaler.fit_transform(-X_p_hat)
+        for j in range(K):
+            plt.subplot('42'+str(j+4))
+            proj = plt.scatter(scaled_X_p_hat[:, j], data['Y'], label = 'proj')
+            true = plt.scatter(scaled_X_p[:, i], data['Y'], label = 'true')
+        plt.legend(handles = [proj, true])
+        plt.savefig('fig'+str(i)+'.png')
+    
+#    sim.show_fun()
+    sim.show_Y()
+    
+main()
