@@ -28,7 +28,7 @@ class sinc_2d:
                 'X_p' : self.X_p,
                 'sinc' : self.sinc,
                 'x2' : self.x2,
-                'Y' : self.Y}
+                'y' : self.Y}
         
     def show_Y(self, file_str = 'Y.png'):
         plt.figure()
