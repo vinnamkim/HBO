@@ -23,17 +23,7 @@ class MHGP:
         self.graph = tf.Graph()
         
         with self.graph.as_default():
-            ####### CONSTANTS #######
-            
-            # N, K, D, M are constants
-            N_ = tf.placeholder(dtype = FLOATING_TYPE, shape = [], name = 'M')
-            M_ = tf.constant(M, name = 'M', dtype = FLOATING_TYPE)
-            D_ = tf.constant(D, name = 'D', dtype = FLOATING_TYPE)
-            K_ = tf.constant(K, name = 'K', dtype = FLOATING_TYPE)
-            pi_ = tf.constant(np.pi, name = 'PI', dtype = FLOATING_TYPE)
-            
-            
-            ####### DATA #######
+            ####### VARIABLES #######
             
             # X is a N x D placeholder
             # y is a N x 1 placeholder
@@ -50,8 +40,16 @@ class MHGP:
             log_sigma_f = tf.get_variable('log_sigma_f', initializer = tf.random_uniform_initializer(), shape = [], dtype = FLOATING_TYPE)
             log_tau = tf.get_variable('log_tau', initializer = tf.random_uniform_initializer(), shape = [], dtype = FLOATING_TYPE)
             
-            self.inputs = {'N' : N_,
-                          'X' : X,
+            ####### CONSTANTS #######
+            
+            # N, K, D, M are constants
+            N_ = tf.cast(tf.shape(y)[0], dtype = FLOATING_TYPE, name = 'N')
+            M_ = tf.constant(M, name = 'M', dtype = FLOATING_TYPE)
+            D_ = tf.constant(D, name = 'D', dtype = FLOATING_TYPE)
+            K_ = tf.constant(K, name = 'K', dtype = FLOATING_TYPE)
+            pi_ = tf.constant(np.pi, name = 'PI', dtype = FLOATING_TYPE)
+            
+            self.inputs = {'X' : X,
                           'y' : y,
                           'Z' : Z,
                           'mu' : mu,
@@ -146,6 +144,8 @@ class MHGP:
                             'l_square': l_square,
                             'train_op1' : train_op1,
                             'train_op2' : train_op2}
+            
+            
         
     def fitting(self, data, Iter1 = 100, Iter2 = 500, init_method = 'pca'):
         FLOATING_TYPE = self.FLOATING_TYPE
@@ -154,7 +154,7 @@ class MHGP:
         
         X = data['X']
         y = data['y']
-        N = data['N']
+        N = np.shape(data['y'])[0]
         M = self.M
         K = self.K
         D = self.D
@@ -180,7 +180,7 @@ class MHGP:
         init_value['log_sigma_f'] = 0.5 * np.log(np.var(y))
         
         init_value['log_tau'] = 0.5 * np.log(np.var(y) / 100)
-    
+        
         with tf.Session(graph=self.graph) as sess:
             ####### INITIALIZATION #######
             
@@ -190,8 +190,7 @@ class MHGP:
                 sess.run(self.inputs[key].assign(init_value[key]))
                 #print key, np.sum(self.inputs[key].eval() - init_value[key])
             
-            feed_dict = {self.inputs['N'] : np.float(N),
-                         self.inputs['X'] : X,
+            feed_dict = {self.inputs['X'] : X,
                          self.inputs['y'] : y}
             
             obj = sess.run(self.outputs['OBJ'], feed_dict)
@@ -209,11 +208,12 @@ class MHGP:
                     if new_obj < obj:
                         obj = new_obj
                         out = [sess.run(self.inputs['mu']), sess.run(self.outputs['l_square'])]
-                        
+                       
+                    if i % 10 is 0:
+                        print i, new_obj 
                     
-                    if i % 10 is 0: print(i, new_obj)
-                    
-                except:
+                except Exception as inst:
+                    print inst
                     break
             
             ####### TRAIN_STEP2 #######
@@ -228,9 +228,11 @@ class MHGP:
                         obj = new_obj
                         out = [sess.run(self.inputs['mu']), sess.run(self.outputs['l_square'])]
                         
-                    if i % 10 is 0: print(i, new_obj)
+                    if i % 10 is 0:
+                        print i, new_obj
                     
-                except:
+                except Exception as inst:
+                    print inst
                     break
         
         return out
@@ -241,7 +243,6 @@ def main(N = 200, D = 10, M = 50, K = 10, Iter1 = 100, Iter2 = 500):
     
     sim = sinc_2d.sinc_2d(N, D, 5, 0.01)
     data = sim.data()
-    data['N'] = N
     
     fit = mhgp.fitting(data)
     
