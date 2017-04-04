@@ -8,17 +8,18 @@ Created on Wed Mar 29 16:41:37 2017
 
 import numpy as np
 import tensorflow as tf
+import settings
 
-def mvn_likelihood_sqkern(Z, mu, length_sq, sigma_sq, noise_sq, JITTER_VALUE, FLOATING_TYPE):
-    r = tf.reshape(tf.reduce_sum(tf.square(Z), 1), [-1, 1]) # M x 1
-    K_uu = tf.exp(-(0.5 / length_sq) * (r - 2 * tf.matmul(Z, tf.transpose(Z)) + tf.transpose(r))) # Check
-    L = tf.cholesky(sigma_sq * K_uu + (JITTER_VALUE + noise_sq) * tf.diag(tf.squeeze(tf.ones_like(r))))
+def mvn_likelihood_sqkern(X, y, mu, length_sq, sigma_sq, noise_sq, JITTER_VALUE, FLOATING_TYPE):
+    r = tf.reshape(tf.reduce_sum(tf.square(X), 1), [-1, 1]) # M x 1
+    K_uu = tf.exp(-(0.5 / length_sq) * (r - 2 * tf.matmul(X, tf.transpose(X)) + tf.transpose(r))) # Check
+    L = tf.cholesky(sigma_sq * K_uu + (JITTER_VALUE + noise_sq) * tf.diag(tf.squeeze(tf.ones_like(r, dtype = FLOATING_TYPE))))
     
-    d = Z - mu
+    d = y - mu
     alpha = tf.matrix_triangular_solve(L, d, lower=True)
-    num_col = 1 if tf.rank(Z) == 1 else tf.shape(Z)[1]
+    num_col = 1 if tf.rank(y) == 1 else tf.shape(y)[1]
     num_col = tf.cast(num_col, FLOATING_TYPE)
-    num_dims = tf.cast(tf.shape(Z)[0], FLOATING_TYPE)
+    num_dims = tf.cast(tf.shape(y)[0], FLOATING_TYPE)
     ret = - 0.5 * num_dims * num_col * np.log(2 * np.pi)
     ret += - num_col * tf.reduce_sum(tf.log(tf.diag_part(L)))
     ret += - 0.5 * tf.reduce_sum(tf.square(alpha))
@@ -36,9 +37,9 @@ def f_star(x_star, X, y, length_sq, sigma_sq, noise_sq, L, MIN_VAR, FLOATING_TYP
     
     mu = tf.squeeze(tf.matmul(tf.transpose(L_inv_l), L_inv_y))
     var = sigma_sq - tf.reduce_sum(tf.square(L_inv_l))
-    var = tf.clip_by_value(var, clip_value_min = tf.constant(MIN_VAR), clip_value_max = tf.constant(np.finfo(FLOATING_TYPE).max))
+#    var = tf.clip_by_value(var, clip_value_min = tf.constant(MIN_VAR), clip_value_max = tf.constant(np.finfo(FLOATING_TYPE).max, dtype = FLOATING_TYPE))
     
-    return mu, var
+    return mu, var, l, L_inv_l, L_inv_y
         
 def acq_fun(mu_star, var_star, max_fun, method):
     if method is 'EI':
@@ -55,8 +56,30 @@ def log_barrier(x_star, A):
     
     return tf.reduce_sum(tf.log(b - Ax) + tf.log(Ax + b)) # FOR MAXIMIZATION
     
-def hit_and_run(x_star, A, b, Iter = 100):
+def hit_and_run(x_star, A, b, Burnin = 100, Iter = 1000):
     D = np.shape(b)[0]
+    
+    for i in xrange(Burnin):
+        Ax = np.matmul(A, np.transpose(x_star))
+        LEFT = -b - Ax
+        RIGHT = b - Ax
+        
+        alpha = np.random.normal(size = [D, 1])
+        A_alpha = np.matmul(A, alpha)
+        l = LEFT / A_alpha 
+        r = RIGHT / A_alpha
+        
+        pos = A_alpha > 0
+        neg = A_alpha < 0
+        
+        theta_min = np.max(np.concatenate((l[pos], r[neg])))
+        theta_max = np.min(np.concatenate((r[pos], l[neg])))
+        
+        theta = np.random.uniform(low = theta_min, high = theta_max)
+        
+        x_star = x_star + theta * np.transpose(alpha)
+        
+    X = np.zeros(shape = [Iter, D], dtype = x_star.dtype)
     
     for i in xrange(Iter):
         Ax = np.matmul(A, np.transpose(x_star))
@@ -77,10 +100,13 @@ def hit_and_run(x_star, A, b, Iter = 100):
         theta = np.random.uniform(low = theta_min, high = theta_max)
         
         x_star = x_star + theta * np.transpose(alpha)
-    return x_star
+        
+        X[i, :] = x_star
+        
+    return X
 
 class GP:
-    def __init__(self, D, FLOATING_TYPE = 'float32', JITTER_VALUE = 1e-5, LEARNING_RATE = 1e-1, MIN_VAR = 1e-8, ACQ_FUN = 'EI', SEARCH_METHOD = 'grad'):
+    def __init__(self, D, FLOATING_TYPE = settings.dtype, JITTER_VALUE = 1e-5, LEARNING_RATE = 1e-1, MIN_VAR = 1e-8, ACQ_FUN = 'EI', SEARCH_METHOD = 'grad'):
         self.FLOATING_TYPE = FLOATING_TYPE
         self.SEARCH_METHOD = SEARCH_METHOD
         
@@ -126,11 +152,11 @@ class GP:
             
             ####### GP Likelihood #######
             
-            F, L = mvn_likelihood_sqkern(y, mu, length_sq, sigma_sq, noise_sq, JITTER_VALUE, FLOATING_TYPE)
+            F, L = mvn_likelihood_sqkern(X, y, mu, length_sq, sigma_sq, noise_sq, JITTER_VALUE, FLOATING_TYPE)
             
             ####### x_star dist #######
             
-            mu_star, var_star = f_star(x_star, X, y, length_sq, sigma_sq, noise_sq, L, MIN_VAR, FLOATING_TYPE)
+            mu_star, var_star, l, L_inv_l, L_inv_y = f_star(x_star, X, y, length_sq, sigma_sq, noise_sq, L, MIN_VAR, FLOATING_TYPE)
             
             ####### Acqusition function #######
             
@@ -146,7 +172,10 @@ class GP:
             
             ####### OUTPUTS #######
             
-            self.outputs = {'F' : F, 'chol' : L, 'OBJ' : OBJ_fit , 'train_fit' : train_fit, 'F_acq' : F_acq, 'mu_star' : mu_star, 'var_star' : var_star}
+            self.outputs = {'F' : F, 'chol' : L, 'OBJ' : OBJ_fit , 'train_fit' : train_fit, 'F_acq' : F_acq, 'mu_star' : mu_star, 'var_star' : var_star,
+                            'l' : l,
+                            'L_inv_l' : L_inv_l,
+                            'L_inv_y' : L_inv_y}
             
             ####### FITTING TRAIN STEP #######
             if SEARCH_METHOD is 'grad':
@@ -159,7 +188,8 @@ class GP:
                 train_next = opt_next.minimize(OBJ_next, var_list = [x_star])
                 
                 self.outputs['train_next'] = train_next
-            
+        
+        self.session = tf.Session(graph=self.graph)
             
     def fitting(self, data, Iter = 500, init_method = 'fix'):
         ####### INIT VALUES OF PARAMETERS #######
@@ -171,7 +201,7 @@ class GP:
         
         init_value = {'log_sigma' : 0.5 * np.log(var_y), 'log_noise' : 0.5 * np.log(var_y / 100)}
         
-        self.fitted_params = {}
+        self.fitted_params = {'log_length' : None, 'log_sigma' : None, 'log_noise' : None}
         
         for key in init_value.keys():
             self.fitted_params[key] = init_value[key]
@@ -208,30 +238,66 @@ class GP:
                     print inst
                     break
         
+    def test(self, data, xx):
+        X = data['X']
+        y = data['y']
+        A = data['A']
+        max_fun = data['max_fun']
         
-    def finding_next(self, data, t0 = 10, mu = 2, Iter_search = 10, Iter_outer = 10, Iter_inner = 100, Iter_random = 10000, Iter_sample = 100):
+        with tf.Session(graph=self.graph) as sess:
+            sess.run(tf.global_variables_initializer())
+            
+            feed_dict = {self.inputs['X'] : X, self.inputs['y'] : y, self.inputs['A'] : A, self.inputs['max_fun'] : max_fun}
+            
+            for key in self.fitted_params.keys():
+                sess.run(self.inputs[key].assign(self.fitted_params[key]))
+            
+#            for key in self.fitted_params.keys():
+#                print key, self.fitted_params[key], sess.run(self.inputs[key])
+
+            mu = np.ones_like(xx)
+            var = np.ones_like(xx)
+            F_acq = np.ones_like(xx)
+            
+            for i in xrange(len(xx)):
+                sess.run(self.inputs['x_star'].assign(np.reshape(xx[i], [1, -1])))
+            
+                mu[i], var[i], F_acq[i] = sess.run([self.outputs['mu_star'], self.outputs['var_star'], self.outputs['F_acq']], feed_dict)
+        
+        return [mu, var, F_acq]
+    
+    def finding_next(self, data, t0 = 10., gamma = 2., Iter_search = 10, Iter_outer = 10, Iter_inner = 100, Iter_random = 10000, N_burnin = 100):
+        X = data['X']
+        y = data['y']
+        A = data['A']
+        max_fun = data['max_fun']
+        D = self.D
+        b = np.ones([D, 1])
+        
         if self.SEARCH_METHOD is 'grad':
-            
-            A = data['A']
-            D = self.D
-            b = np.ones([D, 1])
-            
             with tf.Session(graph=self.graph) as sess:
                 feed_dict = {self.inputs['X'] : X,
                              self.inputs['y'] : y,
                              self.inputs['A'] : A,
-                             self.inputs['t'] : t0}
+                             self.inputs['t'] : t0,
+                             self.inputs['max_fun'] : max_fun}
                 
                 x_star = np.zeros([1, D], dtype = self.FLOATING_TYPE)
+                X = hit_and_run(x_star, A, b, N_burnin, Iter_random)
+                np.random.shuffle(X)
                 
                 for n_search in xrange(Iter_search):
                     ## x_star INIT
-                    x_star = hit_and_run(x_star, A, b, Iter = Iter_sample)
+                    x_star = np.reshape(X[n_search], [1, -1])
                     
                     ## OUTER t INIT
-                    feed_dict[self.inputs['t']] = t0
+                    t = t0
+                    feed_dict[self.inputs['t']] = t
                     
                     ###### INTERIOR POINT METHOD ######
+                    
+#                    for ele in feed_dict:
+#                        print ele, feed_dict[ele]
                     
                     ## OUTER LOOP
                     for n_outer in xrange(Iter_outer):
@@ -246,7 +312,7 @@ class GP:
                         sess.run(self.inputs['x_star'].assign(x_star))
                         
                         ## INNER SEARCH
-                        obj = sess.run(self.outputs['F_acq'], feed_dict)
+                        obj = sess.run(self.outputs['F_acq'], feed_dict = feed_dict)
                         
                         for n_inner in xrange(Iter_inner):
                             _, newobj = sess.run([self.outputs['train_next'], self.outputs['F_acq']], feed_dict)
@@ -256,21 +322,18 @@ class GP:
                                 x_star = sess.run(self.inputs['x_star'])
                                 
                         ## INCREASE t
-                        feed_dict[self.inputs['t']] = self.inputs['t'] * mu
+                        feed_dict[self.inputs['t']] = t * gamma
 
             return x_star
         
         elif self.SEARCH_METHOD is 'random':
-            A = data['A']
-            D = self.D
-            b = np.ones([D, 1])
-            
             next_x = np.zeros([1, D], dtype = self.FLOATING_TYPE)
             
             with tf.Session(graph=self.graph) as sess:
                 feed_dict = {self.inputs['X'] : X,
                              self.inputs['y'] : y,
-                             self.inputs['A'] : A}
+                             self.inputs['A'] : A,
+                             self.inputs['max_fun'] : max_fun}
             
                 x_star = np.zeros([1, D], dtype = self.FLOATING_TYPE)
                 
@@ -279,9 +342,9 @@ class GP:
                 for n_search in xrange(Iter_random):
                     x_star = hit_and_run(x_star, A, b, Iter = Iter_sample)
                     
-                    feed_dict[self.intputs['x_star']] = x_star
+                    feed_dict[self.intputs['x_star']] = x_stardata['X']
                     
-                    newobj = sess.run(self.outputs['F_acq'], feed_dict)
+                    newobj = sess.run(self.outputs['F_acq'], feed_dict = feed_dict)
                     
                     if newobj > obj:
                         obj = newobj
@@ -293,24 +356,72 @@ from functions import sinc_simple
 import matplotlib.pyplot as plt
 
 fun = sinc_simple()
+N = 5
 
-D = fun.dim()
-A = np.array([1.0], dtype = 'float32')
-N = 2
-init_x = np.random.uniform(-1, 1, size = [N])
-init_y = fun.evaluate(init_x)
+data = fun.gen_data(N)
+A = np.reshape(np.array([1.0]), [1,1])
+data['A'] = A
 
-data = {'X' : np.reshape(init_x, [N, D]), 'y' : np.reshape(init_y, [N, 1]), 'D' : D, 'A' : A}
+gp = GP(data['D'])
 
-gp = GP(D)
-gp.fitting(data)
+for i in xrange(3):
+    gp.fitting(data, Iter = 500)
+    
+    xx = np.linspace(-1, 1)
+    mu, var, EI = gp.test(data, np.reshape(xx, [-1,1]))
+    next_x = gp.finding_next(data)
+    
+    plt.figure()
+    fx = np.linspace(-1,1)
+    fy = np.squeeze(fun.evaluate(np.linspace(-1,1)))
+    plt.plot(fx, fy)
+    plt.scatter(data['X'], data['y'])
+    plt.plot(xx, (max(fy) - min(fy)) / (max(EI) - min(EI)) * (EI) + min(fy), '-.')
+    plt.plot(xx, mu, 'k')
+    plt.plot(xx, mu + 2 * var, 'k:')
+    plt.plot(xx, mu - 2 * var, 'k:')
+    plt.scatter(next_x, np.mean(data['y']), marker = 'x')
+    plt.title('N is ' + str(len(data['y'])))
+    plt.show()
+    fun.update(next_x, data)
+    
+    
+#t = t.astype('float32')
+xx = np.linspace(-1, 1)
+#xx = xx.astype('float32')
+#xx = data['X']
+mu = np.zeros(len(xx))
+var = np.zeros(len(xx))
+EI = np.zeros(len(xx))
+#LL = np.linalg.cholesky(np.exp(2 * gp.fitted_params['log_sigma']) * np.exp(-(0.5 / np.exp(2 * gp.fitted_params['log_length'])) * np.square(t - np.transpose(t))) + (1e-5 + np.exp(2 * gp.fitted_params['log_noise'])) * np.eye(N))
+#LL = LL.astype('float32')
 
-gp.fitted_params
-
-plt.plot(np.linspace(-1,1), np.squeeze(fun.evaluate(np.linspace(-1,1))))
+for idx in xrange(len(xx)):
+    a,b,c = gp.test(data, np.reshape(xx[idx], [1,1]))
+    mu[idx] = a
+    var[idx] = b
+    EI[idx] = c
+#    ll = np.exp(2 * gp.fitted_params['log_sigma']) * np.exp(-(0.5 / np.exp(2 * gp.fitted_params['log_length'])) * np.square(t - np.transpose(np.reshape(xx[idx], [1,1]))))
+#    mu[idx] = np.squeeze(np.matmul(np.transpose(np.linalg.solve(LL, ll)), np.linalg.solve(LL, data['y'])))
+    
+#     mu[idx] = np.squeeze(np.matmul(np.transpose(np.linalg.solve(L, ll)), np.linalg.solve(L, data['y'])))
+fx = np.linspace(-1,1)
+fy = np.squeeze(fun.evaluate(np.linspace(-1,1)))
+plt.plot(fx, fy)
 plt.scatter(data['X'], data['y'])
+plt.plot(xx, (max(fy) - min(fy)) / (max(EI) - min(EI)) * (EI) + min(fy), '-.')
+plt.plot(xx, mu, 'k')
+plt.plot(xx, mu + 2 * var, 'k:')
+plt.plot(xx, mu - 2 * var, 'k:')
+
+next_x = gp.finding_next(data)
+plt.plot(xx, EI)
+plt.scatter(next_x, 0)
 
 
+
+next_x = gp.finding_next(data)
+next_x = gp.finding_next(data)
 import numpy as np
 
 N = 500
@@ -326,6 +437,7 @@ data = {'X' : X, 'y' : y}
 
 gp = GP(D)
 gp.fitting(data)
+gp.test(data, data['X'][0])
 
 for param in gp.fitted_params:
     print param, np.exp(gp.fitted_params[param])
