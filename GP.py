@@ -52,13 +52,15 @@ def acq_fun(mu_star, var_star, max_fun, method):
         diff = (mu_star - max_fun)
         Z = diff / tf.sqrt(var_star)
         EI = diff * dist.cdf(Z) + std_star * dist.pdf(Z)
-        return EI
+        return EI # L x 1
         
-def log_barrier(x_star, A):
-    Ax = tf.transpose(tf.matmul(A, tf.transpose(x_star))) # L x D
-    b = tf.ones_like(Ax)
+def log_barrier(x_star, A, b):
+    # x_star : L x D 
+    # A : DD x D
+    # b : DD x 1
+    Ax = tf.matmul(A, tf.transpose(x_star)) # DD x L
     
-    return tf.reduce_sum(tf.log(b - Ax) + tf.log(Ax + b), axis = -1) # FOR MAXIMIZATION L x 1
+    return tf.reshape(tf.reduce_sum(tf.log(b - Ax) + tf.log(Ax + b), axis = 0), [-1, 1]) # FOR MAXIMIZATION L x 1
     
 def hit_and_run(x_star, A, b, Burnin = 100, Iter = 1000):
     D = np.shape(b)[0]
@@ -137,6 +139,7 @@ class GP:
             max_fun = tf.placeholder(name = 'max_fun', shape = [], dtype = FLOATING_TYPE)
             
             A = tf.placeholder(name = 'A', shape = [None, D], dtype = FLOATING_TYPE)
+            b = tf.placeholder(name = 'b', shape = [None, 1], dtype = FLOATING_TYPE)
             t = tf.placeholder(name = 't', shape = [], dtype = FLOATING_TYPE)
             self.inputs = {'X' : X,
                            'y' : y,
@@ -145,6 +148,7 @@ class GP:
                            'log_noise' : log_noise,
                            'x_star' : x_star,
                            'A' : A,
+                           'b' : b,
                            't' : t,
                            'max_fun' : max_fun}
             
@@ -271,56 +275,63 @@ class GP:
         A = data['A']
         max_fun = data['max_fun']
         D = self.D
-        b = np.ones([D, 1])
+        b = data['b']
         
         if self.SEARCH_METHOD is 'grad':
             with tf.Session(graph=self.graph) as sess:
                 feed_dict = {self.inputs['X'] : X,
                              self.inputs['y'] : y,
                              self.inputs['A'] : A,
+                             self.inputs['b'] : b,
                              self.inputs['t'] : t0,
                              self.inputs['max_fun'] : max_fun}
                 
-                x_star = np.zeros([1, D], dtype = self.FLOATING_TYPE)
-                x_list = hit_and_run(x_star, A, b, N_burnin, Iter_random)
+                x_init = self.x_init
+                x_list = hit_and_run(x_init, A, b, N_burnin, Iter_random)
+                self.x_init = np.reshape(x_list[-1], [1, D])
+                
                 np.random.shuffle(x_list)
                 
-                for n_search in xrange(Iter_search):
-                    ## x_star INIT
-                    x_star = np.reshape(x_list[n_search], [1, -1])
-                    
-                    ## OUTER t INIT
-                    t = t0
-                    feed_dict[self.inputs['t']] = t
-                    
-                    ###### INTERIOR POINT METHOD ######
-                    
-                    ## OUTER LOOP
-                    for n_outer in xrange(Iter_outer):
-                        ## INITIALIZE
-                        sess.run(tf.global_variables_initializer())
-                    
-                        ## FITTED PARAMS INIT
-                        for key in self.fitted_params.keys():
-                            sess.run(self.inputs[key].assign(self.fitted_params[key]))
-                            
-                        ## x_star assign
-                        sess.run(self.inputs['x_star'].assign(x_star))
+                ## x_star INIT
+                x_star = x_list[Iter_search]
+                
+                ## OUTER t INIT
+                t = t0
+                feed_dict[self.inputs['t']] = t
+                
+                ###### INTERIOR POINT METHOD ######
+                
+                ## OUTER LOOP
+                for n_outer in xrange(Iter_outer):
+                    ## INITIALIZE
+                    sess.run(tf.global_variables_initializer())
+                
+                    ## FITTED PARAMS INIT
+                    for key in self.fitted_params.keys():
+                        sess.run(self.inputs[key].assign(self.fitted_params[key]))
                         
-                        ## INNER SEARCH
-                        obj = sess.run(self.outputs['F_acq'], feed_dict = feed_dict)
+                    ## x_star assign
+                    sess.run(self.inputs['x_star'].assign(x_star))
+                    
+                    ## INNER SEARCH
+                    #obj = sess.run(self.outputs['F_acq'], feed_dict = feed_dict)
+                    
+                    for n_inner in xrange(Iter_inner):
+                        sess.run(self.outputs['train_next'], feed_dict)
+                        #_, newobj = sess.run([self.outputs['train_next'], self.outputs['F_acq']], feed_dict)
                         
-                        for n_inner in xrange(Iter_inner):
-                            _, newobj = sess.run([self.outputs['train_next'], self.outputs['F_acq']], feed_dict)
-                            
-                            if newobj > obj:
-                                obj = newobj
-                                x_star = sess.run(self.inputs['x_star'])
-                                
-                        ## INCREASE t
-                        feed_dict[self.inputs['t']] = t * gamma
-
-            return x_star
+                        #if newobj > obj:
+                        #    obj = newobj
+                        #    x_star = sess.run(self.inputs['x_star'])
+                    
+                    x_star = sess.run(self.inputs['x_star'])
+                    
+                    ## INCREASE t
+                    feed_dict[self.inputs['t']] = t * gamma
+                    
+            obj = sess.run(self.outputs['F_acq'], feed_dict = feed_dict)
+            
+            return np.reshape(x_star[np.argmax(obj)], [1, D])
         
         elif self.SEARCH_METHOD is 'random':
             x_init = self.x_init
@@ -345,7 +356,7 @@ class GP:
             
             self.x_init = np.reshape(x_star[-1], [-1, D])
             
-            return np.reshape(x_star[np.argmax(obj)], [-1, D])
+            return np.reshape(x_star[np.argmax(obj)], [1, D])
 
 from functions import sinc_simple
 import matplotlib.pyplot as plt
@@ -356,6 +367,7 @@ N = 10
 data = fun.gen_data(N)
 A = np.reshape(np.array([1.0]), [1,1])
 data['A'] = A
+data['b'] = np.ones([1, 1])
 
 gp = GP(data['D'], SEARCH_METHOD = 'random')
 
@@ -377,11 +389,7 @@ for i in xrange(3):
     plt.plot(xx, mu - 2 * np.sqrt(var), 'k:')
     plt.scatter(next_x, np.mean(data['y']), marker = 'x')
     plt.title('N is ' + str(len(data['y'])))
-    plt.show()
-    
-    mu, var, EI = gp.test(data, data['X'])
-    plt.scatter(data['X'], mu)
-    
+    plt.show()    
     fun.update(next_x, data)
 
 ############################
@@ -394,7 +402,9 @@ N = 1000
 
 data = fun.gen_data(N)
 A = np.eye(2)
+b = np.ones([2, 1])
 data['A'] = A
+data['b'] = b
 
 gp = GP(data['D'], SEARCH_METHOD = 'random')
 
