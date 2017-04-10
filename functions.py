@@ -13,7 +13,7 @@ class function:
     def evaluate(self, x):
         eval_x = self.x_scale * (x + self.x_bias)
         eval_x = np.clip(eval_x, self.x_min, self.x_max)
-        return self.f(eval_x)
+        return eval_x, self.f(eval_x)
     
     def update(self, next_x, data):
         next_y = self.evaluate(next_x)

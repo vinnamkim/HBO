@@ -12,17 +12,63 @@ import matplotlib.pyplot as plt
 from sklearn import preprocessing
 import settings
 import functions
+import SI
 
-class REMBO:
-    def __init__(self, fun, K, D, N, ACQ_FUN, SEARCH_METHOD, iter_fit):
+def Sample_unitball(N, D, epsilon):
+    Y = np.random.normal(size = [N, D]).astype(settings.dtype)
+    Y_sum = np.sqrt(np.sum(np.square(Y), axis = 1)).reshape([N, 1])
+    X = Y / Y_sum
+    
+    return X * (1. - epsilon)
+
+class SI:
+    def __init__(self, fun, K, D, m_X, m_Phi, ACQ_FUN, SEARCH_METHOD, iter_fit):
+        m_X = 25
+        m_Phi = 8
+        D = 2
+        K = 1
+        
         data = {}
         data['A'] = np.eye(K, dtype = settings.dtype)
         data['b'] = np.sqrt(D) * np.ones(shape = [K, 1], dtype = settings.dtype)
         
+        epsilon = settings.SIBO_epsilon
+        C2 = settings.SIBO_C2
+        C2 = 0.01
+        fun = functions.sinc_simple2()
+        
+        
+        X_center = Sample_unitball(m_X, D, epsilon)
+        X_center, y_center = fun.evaluate(X_center)
+        
+        Phi = [np.random.uniform(size = [D, m_X]).astype(settings.dtype) for i in xrange(m_Phi)]
+        Phi = [1 / np.sqrt(m_Phi).astype(settings.dtype) * (2 * np.round(P) - 1) for P in Phi]
+        
+        Direction = [fun.evaluate(X_center + epsilon * np.transpose(P)) for P in Phi]
+        
+        X_direction = np.array([Xy[0] for Xy in Direction]).squeeze()
+        y_direction = np.array([Xy[1] for Xy in Direction]).squeeze()
+            
+        y_SI = 1 / epsilon * np.sum(y_direction - y_center.transpose(), axis = 1).reshape([-1, 1])
+        
+        W = SI.SI(Phi, y_SI, epsilon, K, 0.01)
+        
+        print W
+        print fun.W
+        
+        plt.scatter(np.linspace(-1, 1), fun.evaluate((fun.W / np.matmul(fun.W.transpose(), fun.W) * np.linspace(-1, 1)).transpose())[1])
+        plt.scatter(np.linspace(-1, 1), fun.evaluate((W * np.linspace(-1, 1)).transpose())[1], marker = 'x')
+        plt.scatter(np.linspace(-2,2), np.sinc(np.pi*np.linspace(-2,2)))
+        plt.scatter(np.linspace(-1, 1), fun.evaluate((fun.W / np.matmul(fun.W.transpose(), fun.W) * np.linspace(-1, 1)).transpose())[1])
+        WR = np.random.normal(size = [D, 1])
+        WR = WR / np.matmul(WR.transpose(), WR)
+        plt.scatter(np.linspace(-1, 1), fun.evaluate((WR * np.linspace(-1, 1)).transpose())[1], marker = 'x')
+        
         W = np.random.normal(size = [D, K]).astype(dtype = settings.dtype)
         
         data['Z'] = np.random.uniform(low = -np.sqrt(D), high = np.sqrt(D), size = [N, K]).astype(dtype = settings.dtype)
-        data['X'], data['y'] = fun.evaluate(np.matmul(data['Z'], np.transpose(W)))
+        data['X'] = np.matmul(data['Z'], np.transpose(W))
+        data['y'] = fun.evaluate(data['X'])
         data['max_fun'] = np.max(data['y'])
         
         scaler = preprocessing.MinMaxScaler((-1,1))
