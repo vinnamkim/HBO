@@ -357,47 +357,47 @@ class MHGP:
         z_next = z_star[np.argmax(obj)]
         
         return np.reshape(z_next, [1, K])
-
-def main(N = 100, D = 10, M = 10, K = 10, Iter1 = 100, Iter2 = 500):
-    mhgp = MHGP(M, K, D)
-    
-    sim = sinc_2d.sinc_2d(N, D, 5, 0.01)
-    data = sim.data()
-    
-    fit = mhgp.fitting(data)
-    
-    W_hat = mhgp.fitted_params['mu']
-    
-    lsq_hat = mhgp.l_square
-    
-    print(lsq_hat)
-    
-    idx_list = np.argsort(lsq_hat)[::-1]
-    
-    X_p_hat = np.matmul(data['X'], np.transpose(W_hat[idx_list, :]))
-    
-    min_max_scaler = preprocessing.MinMaxScaler()
-    scaled_X_p = min_max_scaler.fit_transform(data['X_p'])
-    
-    for i in xrange(2):
-        plt.figure(figsize = (8, 16))
-        
-        scaled_X_p_hat = min_max_scaler.fit_transform(X_p_hat)
-        for j in xrange(4):
-            plt.subplot('42'+str(j))
-            proj = plt.scatter(scaled_X_p_hat[:, j], data['y'], label = 'proj')
-            true = plt.scatter(scaled_X_p[:, i], data['y'], label = 'true')
-            
-        scaled_X_p_hat = min_max_scaler.fit_transform(-X_p_hat)
-        for j in xrange(4):
-            plt.subplot('42'+str(j+4))
-            proj = plt.scatter(scaled_X_p_hat[:, j], data['y'], label = 'proj')
-            true = plt.scatter(scaled_X_p[:, i], data['y'], label = 'true')
-            
-        plt.legend(handles = [proj, true])
-        plt.savefig('fig'+str(i)+'.png')
-    
-    sim.show_fun()
-    sim.show_Y()
-    
-main()
+#
+#def main(N = 100, D = 10, M = 10, K = 10, Iter1 = 100, Iter2 = 500):
+#    mhgp = MHGP(M, K, D)
+#    
+#    sim = sinc_2d.sinc_2d(N, D, 5, 0.01)
+#    data = sim.data()
+#    
+#    fit = mhgp.fitting(data)
+#    
+#    W_hat = mhgp.fitted_params['mu']
+#    
+#    lsq_hat = mhgp.l_square
+#    
+#    print(lsq_hat)
+#    
+#    idx_list = np.argsort(lsq_hat)[::-1]
+#    
+#    X_p_hat = np.matmul(data['X'], np.transpose(W_hat[idx_list, :]))
+#    
+#    min_max_scaler = preprocessing.MinMaxScaler()
+#    scaled_X_p = min_max_scaler.fit_transform(data['X_p'])
+#    
+#    for i in xrange(2):
+#        plt.figure(figsize = (8, 16))
+#        
+#        scaled_X_p_hat = min_max_scaler.fit_transform(X_p_hat)
+#        for j in xrange(4):
+#            plt.subplot('42'+str(j))
+#            proj = plt.scatter(scaled_X_p_hat[:, j], data['y'], label = 'proj')
+#            true = plt.scatter(scaled_X_p[:, i], data['y'], label = 'true')
+#            
+#        scaled_X_p_hat = min_max_scaler.fit_transform(-X_p_hat)
+#        for j in xrange(4):
+#            plt.subplot('42'+str(j+4))
+#            proj = plt.scatter(scaled_X_p_hat[:, j], data['y'], label = 'proj')
+#            true = plt.scatter(scaled_X_p[:, i], data['y'], label = 'true')
+#            
+#        plt.legend(handles = [proj, true])
+#        plt.savefig('fig'+str(i)+'.png')
+#    
+#    sim.show_fun()
+#    sim.show_Y()
+#    
+#main()

@@ -21,12 +21,9 @@ def Sample_unitball(N, D, epsilon):
     
     return X * (1. - epsilon)
 
-class SI:
-    def __init__(self, fun, K, D, m_X, m_Phi, ACQ_FUN, SEARCH_METHOD, iter_fit):
-        m_X = 25
-        m_Phi = 8
-        D = 2
-        K = 1
+class SIBO:
+    def __init__(self, fun, K, m_X, m_Phi, ACQ_FUN, SEARCH_METHOD, iter_fit):
+        D = fun.D
         
         data = {}
         data['A'] = np.eye(K, dtype = settings.dtype)
@@ -34,9 +31,6 @@ class SI:
         
         epsilon = settings.SIBO_epsilon
         C2 = settings.SIBO_C2
-        C2 = 0.01
-        fun = functions.sinc_simple2()
-        
         
         X_center = Sample_unitball(m_X, D, epsilon)
         X_center, y_center = fun.evaluate(X_center)
@@ -51,24 +45,15 @@ class SI:
             
         y_SI = 1 / epsilon * np.sum(y_direction - y_center.transpose(), axis = 1).reshape([-1, 1])
         
-        W = SI.SI(Phi, y_SI, epsilon, K, 0.01)
+        W = SI.SI(Phi, y_SI, epsilon, K, C2)
         
-        print W
-        print fun.W
+#        data['X'] = np.concatenate((X_center, X_direction.reshape([-1, D])), axis = 0)
+#        data['y'] = np.concatenate((y_center, y_direction.reshape([-1, 1])), axis = 0)
         
-        plt.scatter(np.linspace(-1, 1), fun.evaluate((fun.W / np.matmul(fun.W.transpose(), fun.W) * np.linspace(-1, 1)).transpose())[1])
-        plt.scatter(np.linspace(-1, 1), fun.evaluate((W * np.linspace(-1, 1)).transpose())[1], marker = 'x')
-        plt.scatter(np.linspace(-2,2), np.sinc(np.pi*np.linspace(-2,2)))
-        plt.scatter(np.linspace(-1, 1), fun.evaluate((fun.W / np.matmul(fun.W.transpose(), fun.W) * np.linspace(-1, 1)).transpose())[1])
-        WR = np.random.normal(size = [D, 1])
-        WR = WR / np.matmul(WR.transpose(), WR)
-        plt.scatter(np.linspace(-1, 1), fun.evaluate((WR * np.linspace(-1, 1)).transpose())[1], marker = 'x')
+        data['X'] = X_center
+        data['y'] = y_center
         
-        W = np.random.normal(size = [D, K]).astype(dtype = settings.dtype)
-        
-        data['Z'] = np.random.uniform(low = -np.sqrt(D), high = np.sqrt(D), size = [N, K]).astype(dtype = settings.dtype)
-        data['X'] = np.matmul(data['Z'], np.transpose(W))
-        data['y'] = fun.evaluate(data['X'])
+        data['Z'] = np.matmul(data['X'], W)
         data['max_fun'] = np.max(data['y'])
         
         scaler = preprocessing.MinMaxScaler((-1,1))
@@ -76,7 +61,6 @@ class SI:
         data['y_scaled'] = scaler.fit_transform(data['y'])
         data['scaled_max_fun'] = np.array(1.0, dtype = settings.dtype)
         
-#        types = ['Z', 'y_scaled', 'scaled_max_fun']
         types = ['Z', 'y', 'max_fun']
         
         data['beta'] = fun.beta(data)
@@ -93,7 +77,7 @@ class SI:
         self.W = W
         self.types = types
         self.scaler = scaler
-    
+        
     def iterate(self, iter_fit, iter_next):
         data = self.data
         fun = self.fun
@@ -103,8 +87,7 @@ class SI:
         gp = self.gp
         
         next_z = gp.finding_next(data, types, Iter_random = iter_next)
-        next_x = np.matmul(next_z, np.transpose(W))
-        next_y = fun.evaluate(next_x)
+        next_x, next_y = fun.evaluate(np.matmul(next_z, np.transpose(W)))
         
         data['Z'] = np.append(data['Z'], next_z, axis = 0)
         data['X'] = np.append(data['X'], next_x, axis = 0)
@@ -120,15 +103,16 @@ class SI:
         
     
 fun = functions.sinc_simple2()
-R = REMBO(fun, 1, 2, 10, ACQ_FUN = 'EI', SEARCH_METHOD = 'random', iter_fit = 500)
 
-for i in xrange(3):
+R = SIBO(fun, 1, 5, 2, ACQ_FUN = 'EI', SEARCH_METHOD = 'random', iter_fit = 500)
+
+for i in xrange(10):
     data = R.data
     gp = R.gp
-    W = np.transpose(R.W)
+    W = R.W
     
     fx = np.random.uniform(-np.sqrt(2),np.sqrt(2), [100, 1])
-    fy = fun.evaluate(np.matmul(fx, W))
+    fy = fun.evaluate(np.matmul(W, fx.transpose()).transpose())[1]
 #   fx = np.matmul(fx, fun.W)
     fxfy = np.concatenate([fx, fy], axis = 1)
     fxfy = fxfy[fxfy[:, 0].argsort()]
@@ -137,6 +121,7 @@ for i in xrange(3):
     
     pfxpp = np.concatenate([fx, np.reshape(mu, [-1, 1]), np.reshape(var, [-1, 1]), np.reshape(EI, [-1, 1])], axis = 1)
     pfxpp = pfxpp[pfxpp[:, 0].argsort()]
+    
     next_x = R.iterate(500, 10000)
     
     plt.figure()
@@ -149,45 +134,4 @@ for i in xrange(3):
     plt.scatter(data['Z'][-1], np.min(data['y']), marker = 'x', color = 'g')
     plt.title('N is ' + str(len(data['y'])))
     plt.show()
-        
-
-
-R.iterate(500, 10000)
-
-
-R.data
-
-    xx = np.linspace(-1, 1)
-    mu, var, EI = gp.test(data, np.reshape(xx, [-1,1]))
     
-    
-    plt.figure()
-    fx = np.linspace(-1,1)
-    fy = np.squeeze(fun.evaluate(np.linspace(-1,1)))
-    plt.plot(fx, fy)
-    plt.scatter(data['X'], data['y'])
-    plt.plot(xx, (max(fy) - min(fy)) / (max(EI) - min(EI)) * (EI) + min(fy), '-.')
-    plt.plot(xx, mu, 'k')
-    plt.plot(xx, mu + 2 * np.sqrt(var), 'k:')
-    plt.plot(xx, mu - 2 * np.sqrt(var), 'k:')
-    plt.scatter(next_x, np.mean(data['y']), marker = 'x')
-    plt.title('N is ' + str(len(data['y'])))
-    plt.show()    
-    fun.update(next_x, data)
-
-N = 10
-D = 2
-K = 1
-
-test = preprocessing.MinMaxScaler((-1,1))
-
-a = np.random.normal(size = [100, 1])
-
-b = test.fit_transform(a)
-
-
-
-try:
-    data['y']
-except:
-    data['y'] = {}

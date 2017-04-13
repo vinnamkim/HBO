@@ -114,10 +114,14 @@ def hit_and_run(x_star, A, b, Burnin = 100, Iter = 1000):
     return X
 
 class GP:
-    def __init__(self, D, FLOATING_TYPE = settings.dtype, JITTER_VALUE = 1e-5, LEARNING_RATE = 1e-1, ACQ_FUN = 'EI', SEARCH_METHOD = 'grad'):
-        self.FLOATING_TYPE = FLOATING_TYPE
+    def __init__(self, D, LEARNING_RATE = 1e-1, ACQ_FUN = 'EI', SEARCH_METHOD = 'random'):
+        self.FLOATING_TYPE = settings.dtype
+        self.JITTER_VALUE = settings.jitter
         self.SEARCH_METHOD = SEARCH_METHOD
         self.ACQ_FUN = ACQ_FUN
+        
+        FLOATING_TYPE = self.FLOATING_TYPE
+        JITTER_VALUE = self.JITTER_VALUE
         
         self.fitted_params = {'log_length' : None, 'log_sigma' : None, 'log_noise' : None}
         
@@ -222,19 +226,24 @@ class GP:
             
             ####### TRAIN_STEP #######
             
+            train_dict = {'train_fit' : self.outputs['train_fit'],
+                          'OBJ' : self.outputs['OBJ']}
+            
+            train_dict.update(self.params)
+            
             print('TRAIN_STEP')
             
             for i in xrange(Iter):
                 try:
-                    _, new_obj = sess.run([self.outputs['train_fit'], self.outputs['OBJ']], feed_dict)
+                    train_step = sess.run(train_dict, feed_dict)
                     
-                    if new_obj < obj:
-                        obj = new_obj
+                    if train_step['OBJ'] < obj:
+                        obj = train_step['OBJ']
                         for key in self.fitted_params.keys():
-                            self.fitted_params[key] = self.params[key].eval()
+                            self.fitted_params[key] = train_step[key]
                     
                     if i % 100 is 0:
-                        print i, new_obj
+                        print i, train_step['OBJ']
                         
                 except Exception as inst:
                     print inst

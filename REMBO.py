@@ -14,7 +14,9 @@ import settings
 import functions
 
 class REMBO:
-    def __init__(self, fun, K, D, N, ACQ_FUN, SEARCH_METHOD, iter_fit):
+    def __init__(self, fun, K, N, ACQ_FUN, SEARCH_METHOD, iter_fit):
+        D = fun.D
+        
         data = {}
         data['A'] = np.eye(K, dtype = settings.dtype)
         data['b'] = np.sqrt(D) * np.ones(shape = [K, 1], dtype = settings.dtype)
@@ -57,8 +59,7 @@ class REMBO:
         gp = self.gp
         
         next_z = gp.finding_next(data, types, Iter_random = iter_next)
-        next_x = np.matmul(next_z, np.transpose(W))
-        next_y = fun.evaluate(next_x)
+        next_x, next_y = fun.evaluate(np.matmul(next_z, np.transpose(W)))
         
         data['Z'] = np.append(data['Z'], next_z, axis = 0)
         data['X'] = np.append(data['X'], next_x, axis = 0)
@@ -72,17 +73,16 @@ class REMBO:
         
         return next_x
         
-    
 fun = functions.sinc_simple2()
-R = REMBO(fun, 1, 2, 10, ACQ_FUN = 'EI', SEARCH_METHOD = 'random', iter_fit = 500)
+R = REMBO(fun, 1, 2, ACQ_FUN = 'EI', SEARCH_METHOD = 'random', iter_fit = 500)
 
-for i in xrange(3):
+for i in xrange(10):
     data = R.data
     gp = R.gp
-    W = np.transpose(R.W)
+    W = R.W
     
     fx = np.random.uniform(-np.sqrt(2),np.sqrt(2), [100, 1])
-    fy = fun.evaluate(np.matmul(fx, W))
+    fy = fun.evaluate(np.matmul(W, fx.transpose()).transpose())[1]
 #   fx = np.matmul(fx, fun.W)
     fxfy = np.concatenate([fx, fy], axis = 1)
     fxfy = fxfy[fxfy[:, 0].argsort()]
@@ -104,44 +104,44 @@ for i in xrange(3):
     plt.title('N is ' + str(len(data['y'])))
     plt.show()
         
-
-
-R.iterate(500, 10000)
-
-
-R.data
-
-    xx = np.linspace(-1, 1)
-    mu, var, EI = gp.test(data, np.reshape(xx, [-1,1]))
-    
-    
-    plt.figure()
-    fx = np.linspace(-1,1)
-    fy = np.squeeze(fun.evaluate(np.linspace(-1,1)))
-    plt.plot(fx, fy)
-    plt.scatter(data['X'], data['y'])
-    plt.plot(xx, (max(fy) - min(fy)) / (max(EI) - min(EI)) * (EI) + min(fy), '-.')
-    plt.plot(xx, mu, 'k')
-    plt.plot(xx, mu + 2 * np.sqrt(var), 'k:')
-    plt.plot(xx, mu - 2 * np.sqrt(var), 'k:')
-    plt.scatter(next_x, np.mean(data['y']), marker = 'x')
-    plt.title('N is ' + str(len(data['y'])))
-    plt.show()    
-    fun.update(next_x, data)
-
-N = 10
-D = 2
-K = 1
-
-test = preprocessing.MinMaxScaler((-1,1))
-
-a = np.random.normal(size = [100, 1])
-
-b = test.fit_transform(a)
-
-
-
-try:
-    data['y']
-except:
-    data['y'] = {}
+#
+#
+#R.iterate(500, 10000)
+#
+#
+#R.data
+#
+#    xx = np.linspace(-1, 1)
+#    mu, var, EI = gp.test(data, np.reshape(xx, [-1,1]))
+#    
+#    
+#    plt.figure()
+#    fx = np.linspace(-1,1)
+#    fy = np.squeeze(fun.evaluate(np.linspace(-1,1)))
+#    plt.plot(fx, fy)
+#    plt.scatter(data['X'], data['y'])
+#    plt.plot(xx, (max(fy) - min(fy)) / (max(EI) - min(EI)) * (EI) + min(fy), '-.')
+#    plt.plot(xx, mu, 'k')
+#    plt.plot(xx, mu + 2 * np.sqrt(var), 'k:')
+#    plt.plot(xx, mu - 2 * np.sqrt(var), 'k:')
+#    plt.scatter(next_x, np.mean(data['y']), marker = 'x')
+#    plt.title('N is ' + str(len(data['y'])))
+#    plt.show()    
+#    fun.update(next_x, data)
+#
+#N = 10
+#D = 2
+#K = 1
+#
+#test = preprocessing.MinMaxScaler((-1,1))
+#
+#a = np.random.normal(size = [100, 1])
+#
+#b = test.fit_transform(a)
+#
+#
+#
+#try:
+#    data['y']
+#except:
+#    data['y'] = {}
