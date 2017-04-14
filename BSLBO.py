@@ -60,13 +60,12 @@ class BSLBO:
         gp = self.gp
         ACQ_FUN = self.ACQ_FUN
         
-        W = gp.fitted_params['mu']
+        W = gp.fitted_params['mu'].transpose()
         WT = np.transpose(W)
-        WWT = np.matmul(W, WT)
+        WTW = np.matmul(WT, W)
+        B = np.transpose(np.linalg.solve(WTW, WT)) # D x K
         
-        B = np.transpose(np.linalg.solve(WWT, W)) # D x K
-        
-        next_z = gp.finding_next(data, types, num_sample, effective_dims)
+        next_z = gp.finding_next(data, types, B, num_sample, effective_dims)
         next_x, next_y = fun.evaluate(np.matmul(next_z, np.transpose(B)))
         
         data['X'] = np.append(data['X'], next_x, axis = 0)
@@ -77,59 +76,67 @@ class BSLBO:
         data['max_fun'] = np.max(data['y'])
         data['beta'] = fun.beta(data)
         
-        #M = len(data['y'])
+        M = len(data['y'])
         
         self.gp = MHGP(M, K, D, ACQ_FUN = ACQ_FUN)
         
         self.gp.fitting(data, types)
         
         self.data = data
+        self.M = M
         
         return next_x
         
-fun = functions.sinc_simple2()
-R = BSLBO(fun, 1, 2, 1, ACQ_FUN = 'EI')
+    
 
-for i in xrange(3):
+def X_to_Z(X, W):
+    return np.matmul(X, W)  # X : N x D,  W : D x K
+                        
+def Z_to_Xhat(Z, W):
+    WT = np.transpose(W)
+    WTW = np.matmul(WT, W)
+    B = np.transpose(np.linalg.solve(WTW, WT)) # D x K
+    
+    return np.matmul(Z, B.transpose()) # Z : N x K,  B : D x K
+                    
+
+#fun = functions.sinc_simple2()
+fun = functions.sinc_simple10()
+R = BSLBO(fun, 1, 10, 10, ACQ_FUN = 'UCB')
+
+for i in xrange(10):
     data = R.data
     gp = R.gp
-    W = gp.fitted_params['mu']
-    WT = np.transpose(W)
-    WWT = np.matmul(W, WT)
-    B = np.transpose(np.linalg.solve(WWT, W)) # D x K
+    W = gp.fitted_params['mu'].transpose()
+    
     D = fun.D
-    C = np.matmul(W, np.ones([D, 1]))
+    C = np.matmul(W.transpose(), np.ones([D, 1]))
     fx = np.linspace(-np.sqrt(D) * np.abs(np.squeeze(C)), np.sqrt(D) * np.abs(np.squeeze(C)), num = 100).reshape([100, 1])
-    fy = fun.evaluate(np.matmul(fx, np.transpose(B)))[1]
+    fy = fun.evaluate(Z_to_Xhat(fx, W))[1]
     
     mu, var, EI = gp.test(data, R.types, fx)
     
     pfxpp = np.concatenate([fx, np.reshape(mu, [-1, 1]), np.reshape(var, [-1, 1]), np.reshape(EI, [-1, 1])], axis = 1)
     pfxpp = pfxpp[pfxpp[:, 0].argsort()]
-    next_x = R.iterate(10000, np.array([1.]))
+    next_x = R.iterate(10000, np.array([True]))
     
+#    plt.figure()
+#    plt.plot(fx, fy)
+#    plt.scatter(X_to_Z(data['X'], W), data['y'])
+#
+#    plt.plot(fx, fun.evaluate(Z_to_Xhat(fx, fun.W))[1])
+#    plt.scatter(X_to_Z(data['X'], fun.W), data['y'])
+#    
     plt.figure()
     plt.plot(fx, fy)
-    plt.scatter(np.matmul(data['X'], W.transpose()), data['y'])
-    plt.plot(pfxpp[:, 0], (np.max(fy) - np.min(fy)) * (pfxpp[:, 3]) / (np.max(EI) - np.min(EI)) + min(fy), '-.')
+    plt.scatter(X_to_Z(data['X'], W), data['y'])
+#    plt.plot(pfxpp[:, 0], (np.max(fy) - np.min(fy)) * (pfxpp[:, 3]) / (np.max(EI) - np.min(EI)) + min(fy), '-.')
     plt.plot(pfxpp[:, 0], pfxpp[:, 1], 'k')
     plt.plot(pfxpp[:, 0], pfxpp[:, 1] + np.sqrt(pfxpp[:, 2]), 'k:')
     plt.plot(pfxpp[:, 0], pfxpp[:, 1] - np.sqrt(pfxpp[:, 2]), 'k:')
-    plt.scatter(np.matmul(data['X'][-1], W.transpose()), np.min(data['y']), marker = 'x', color = 'g')
+    plt.scatter(np.matmul(data['X'][-1], W), np.min(data['y']), marker = 'x', color = 'g')
     plt.title('N is ' + str(len(data['y'])))
     plt.show()
     
-from scipy.optimize import linprog
     
-def find_enclosingbox(A, b):
-    m = A.shape[0]
-    n = A.shape[1]
-    
-    c_plus = np.zeros([n, n])
-    c_minus = np.zeros([n, n])
-    
-    for i in xrange(n):
-        c_plus
-        
-        linprog()
-        
+                    

@@ -10,6 +10,7 @@ import numpy as np
 import tensorflow as tf
 import settings
 from sklearn import decomposition
+from sampling import sample_enclosingbox
 
 def acq_fun(mu_star, var_star, max_fun, beta, method):
     if method is 'EI':
@@ -197,7 +198,7 @@ class MHGP:
             
             self.debug = locals()
             
-    def fitting(self, data, types, Iter1 = 100, Iter2 = 500, init_method = 'random'):
+    def fitting(self, data, types, Iter1 = 100, Iter2 = 500, init_method = 'pca'):
         FLOATING_TYPE = self.FLOATING_TYPE
         
         ####### INIT VALUES OF PARAMETERS #######
@@ -218,15 +219,15 @@ class MHGP:
         else:
             init_value['mu'] = np.array(np.random.normal(size = [K, D]), dtype = FLOATING_TYPE)
             
-#        Mu = np.matmul(X, np.transpose(init_value['mu']))
-#        
-#        inputScales = 10 / np.square(np.max(Mu, axis = 0) - np.min(Mu, axis = 0))
+        Mu = np.matmul(X, np.transpose(init_value['mu']))
         
-#        init_value['mu'] = init_value['mu'] * np.reshape(inputScales, [-1, 1])
+        inputScales = 10 / np.square(np.max(Mu, axis = 0) - np.min(Mu, axis = 0))
+        
+        init_value['mu'] = init_value['mu'] * np.reshape(inputScales, [-1, 1])
             
         init_value['log_Sigma'] = 0.5 * np.log(1 / np.array(D, dtype = FLOATING_TYPE) + (0.001 / np.array(D, dtype = FLOATING_TYPE)) * np.random.normal(size = [K, D]))
         
-#        init_value['Z'] = np.matmul(X, np.transpose(init_value['mu']))[np.random.permutation(N)[0:M], :]
+        init_value['Z'] = np.matmul(X, np.transpose(init_value['mu']))[np.random.permutation(N)[0:M], :]
         
         init_value['Z'] = np.random.uniform(low = -np.sqrt(D), high = np.sqrt(D), size = [M, K])
         init_value['log_sigma_f'] = 0.5 * np.log(np.var(y))
@@ -345,16 +346,25 @@ class MHGP:
         
         return debugs, params
     
-    def finding_next(self, data, types, num_sample, effective_dims):
+    def finding_next(self, data, types, B, num_sample, effective_dims):
         X = data[types[0]]
         y = data[types[1]]
         max_fun = data[types[2]]
         beta = data['beta']
         K = self.K
+        D = self.D
+        
+        A = B.transpose()
+        
+        A = A[effective_dims]
+        
+        A = A.transpose()
         
         Ke = np.sum(effective_dims)
         
-        z_star = np.random.uniform(low = -np.sqrt(Ke), high = np.sqrt(Ke), size = [num_sample, K]) * effective_dims
+        b = np.sqrt(Ke) * np.ones([D, 1], dtype = settings.dtype)
+        
+        z_star = sample_enclosingbox(A, b, num_sample)
         
         feed_dict = {self.inputs['X'] : X,
                      self.inputs['y'] : y,

@@ -73,15 +73,15 @@ class REMBO:
         
         return next_x
         
-fun = functions.sinc_simple2()
-R = REMBO(fun, 1, 2, ACQ_FUN = 'EI', SEARCH_METHOD = 'random', iter_fit = 500)
+fun = functions.sinc_simple10()
+R = REMBO(fun, 1, 2, ACQ_FUN = 'UCB', SEARCH_METHOD = 'random', iter_fit = 500)
 
 for i in xrange(10):
     data = R.data
     gp = R.gp
     W = R.W
     
-    fx = np.random.uniform(-np.sqrt(2),np.sqrt(2), [100, 1])
+    fx = np.linspace(-np.sqrt(R.D),np.sqrt(R.D), 100).reshape([-1, 1])
     fy = fun.evaluate(np.matmul(W, fx.transpose()).transpose())[1]
 #   fx = np.matmul(fx, fun.W)
     fxfy = np.concatenate([fx, fy], axis = 1)

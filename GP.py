@@ -9,6 +9,8 @@ Created on Wed Mar 29 16:41:37 2017
 import numpy as np
 import tensorflow as tf
 import settings
+from sampling import hit_and_run
+from sampling import sample_enclosingbox
 
 def mvn_likelihood_sqkern(X, y, mu, length_sq, sigma_sq, noise_sq, JITTER_VALUE, FLOATING_TYPE):
     r = tf.reshape(tf.reduce_sum(tf.square(X), 1), [-1, 1]) # M x 1
@@ -64,55 +66,6 @@ def log_barrier(x_star, A, b):
     
     return tf.reshape(tf.reduce_sum(tf.log(b - Ax) + tf.log(Ax + b), axis = 0), [-1, 1]) # FOR MAXIMIZATION L x 1
     
-def hit_and_run(x_star, A, b, Burnin = 100, Iter = 1000):
-    D = np.shape(b)[0]
-    
-    for i in xrange(Burnin):
-        Ax = np.matmul(A, np.transpose(x_star))
-        LEFT = -b - Ax
-        RIGHT = b - Ax
-        
-        alpha = np.random.normal(size = [D, 1])
-        A_alpha = np.matmul(A, alpha)
-        l = LEFT / A_alpha 
-        r = RIGHT / A_alpha
-        
-        pos = A_alpha > 0
-        neg = A_alpha < 0
-        
-        theta_min = np.max(np.concatenate((l[pos], r[neg])))
-        theta_max = np.min(np.concatenate((r[pos], l[neg])))
-        
-        theta = np.random.uniform(low = theta_min, high = theta_max)
-        
-        x_star = x_star + theta * np.transpose(alpha)
-        
-    X = np.zeros(shape = [Iter, D], dtype = x_star.dtype)
-    
-    for i in xrange(Iter):
-        Ax = np.matmul(A, np.transpose(x_star))
-        LEFT = -b - Ax
-        RIGHT = b - Ax
-        
-        alpha = np.random.normal(size = [D, 1])
-        A_alpha = np.matmul(A, alpha)
-        l = LEFT / A_alpha 
-        r = RIGHT / A_alpha
-        
-        pos = A_alpha > 0
-        neg = A_alpha < 0
-        
-        theta_min = np.max(np.concatenate((l[pos], r[neg])))
-        theta_max = np.min(np.concatenate((r[pos], l[neg])))
-        
-        theta = np.random.uniform(low = theta_min, high = theta_max)
-        
-        x_star = x_star + theta * np.transpose(alpha)
-        
-        X[i, :] = x_star
-        
-    return X
-
 class GP:
     def __init__(self, D, LEARNING_RATE = 1e-1, ACQ_FUN = 'EI', SEARCH_METHOD = 'random'):
         self.FLOATING_TYPE = settings.dtype
@@ -341,10 +294,10 @@ class GP:
             return np.reshape(x_star[np.argmax(obj)], [1, D])
         
         elif self.SEARCH_METHOD is 'random':
-            x_init = self.x_init
-            
-            x_star = hit_and_run(x_init, A, b, N_burnin, Iter_random)
-            
+#            x_init = self.x_init
+#            x_star = hit_and_run(x_init, A, b, N_burnin, Iter_random)
+            x_star = sample_enclosingbox(A, b, Iter_random)
+
             feed_dict = {self.inputs['X'] : X,
                          self.inputs['y'] : y,
                          self.acq_inputs['x_star'] : x_star,
@@ -363,8 +316,10 @@ class GP:
                 except Exception as inst:
                     print inst
                     
-            self.x_init = np.reshape(x_star[-1], [-1, D])
+#            self.x_init = np.reshape(x_star[-1], [-1, D])
             
             next_x = x_star[np.argmax(obj)]
                     
             return np.reshape(next_x, [1, D])
+
+

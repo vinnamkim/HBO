@@ -89,6 +89,19 @@ class sinc_simple2(function):
     def f(self, x):
         return np.sinc(np.pi * np.matmul(x, self.W))
 
+class sinc_simple10(function):
+    def __init__(self, FLOATING_TYPE = settings.dtype):
+        self.FLOATING_TYPE = FLOATING_TYPE
+        self.D = 10
+        self.x_scale = np.reshape(np.array([1.0], dtype = self.FLOATING_TYPE), [1, -1])
+        self.x_bias = np.reshape(np.array([0.0], dtype = self.FLOATING_TYPE), [1, -1])
+        self.x_max = np.ones([self.D], dtype = self.FLOATING_TYPE)
+        self.x_min = -np.ones([self.D], dtype = self.FLOATING_TYPE)
+        self.W = np.random.normal(size = [self.D, 1])
+        
+    def f(self, x):
+        return np.sinc(np.pi * np.matmul(x, self.W))
+    
 #
 #class sinc_simple():
 #    def __init__(self, FLOATING_TYPE = settings.dtype):
