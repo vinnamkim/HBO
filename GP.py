@@ -321,5 +321,31 @@ class GP:
             next_x = x_star[np.argmax(obj)]
                     
             return np.reshape(next_x, [1, D])
-
-
+        
+    def find_next(self, data, types, x_star):
+        X = data[types[0]]
+        y = data[types[1]]
+        max_fun = data[types[2]]
+        beta = data['beta']
+                
+        feed_dict = {self.inputs['X'] : X,
+                     self.inputs['y'] : y,
+                     self.acq_inputs['x_star'] : x_star,
+                     self.acq_inputs['max_fun'] : max_fun,
+                     self.acq_inputs['beta'] : beta}
+        
+        with tf.Session(graph=self.graph) as sess:
+            ## INITIALIZE
+            sess.run(tf.global_variables_initializer())
+            
+            ## FITTED PARAMS INIT
+            for key in self.fitted_params.keys():
+                sess.run(self.params[key].assign(self.fitted_params[key]))
+            try:    
+                obj = sess.run(self.outputs['F_acq'], feed_dict = feed_dict)
+            except Exception as inst:
+                print inst
+                
+#            self.x_init = np.reshape(x_star[-1], [-1, D])
+                
+        return np.argmax(obj), obj

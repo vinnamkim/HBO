@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 from sklearn import preprocessing
 import settings
 import functions
+from util_func import X_to_Z, Z_to_Xhat
+from sampling import find_enclosingbox
 
 class BSLBO:
     def __init__(self, fun, K, N, M, ACQ_FUN):
@@ -32,7 +34,7 @@ class BSLBO:
         data['scaled_max_fun'] = np.array(1.0, dtype = settings.dtype)
         data['beta'] = fun.beta(data)
                 
-        types = ['X', 'y_scaled', 'scaled_max_fun']
+        types = ['X', 'y', 'scaled_max_fun']
 #        types = ['X', 'y', 'max_fun']
         
         gp = MHGP(M, K, D, ACQ_FUN = ACQ_FUN)
@@ -65,8 +67,8 @@ class BSLBO:
         WTW = np.matmul(WT, W)
         B = np.transpose(np.linalg.solve(WTW, WT)) # D x K
         
-        next_z = gp.finding_next(data, types, B, num_sample, effective_dims)
-        next_x, next_y = fun.evaluate(np.matmul(next_z, np.transpose(B)))
+        next_x = gp.finding_next(data, types, B, num_sample, effective_dims)
+        next_x, next_y = fun.evaluate(next_x)
         
         data['X'] = np.append(data['X'], next_x, axis = 0)
         data['y'] = np.append(data['y'], next_y, axis = 0)
@@ -86,57 +88,169 @@ class BSLBO:
         self.M = M
         
         return next_x
-        
-    
-
-def X_to_Z(X, W):
-    return np.matmul(X, W)  # X : N x D,  W : D x K
-                        
-def Z_to_Xhat(Z, W):
-    WT = np.transpose(W)
-    WTW = np.matmul(WT, W)
-    B = np.transpose(np.linalg.solve(WTW, WT)) # D x K
-    
-    return np.matmul(Z, B.transpose()) # Z : N x K,  B : D x K
-                    
 
 #fun = functions.sinc_simple2()
-fun = functions.sinc_simple10()
+fun = functions.sinc_simple2()
+#fun = functions.sinc_simple()
 R = BSLBO(fun, 1, 10, 10, ACQ_FUN = 'UCB')
 
 for i in xrange(10):
     data = R.data
     gp = R.gp
+    
     W = gp.fitted_params['mu'].transpose()
     
+#    W = fun.W
+    WT = np.transpose(W)
+    WTW = np.matmul(WT, W)
+    B = np.transpose(np.linalg.solve(WTW, WT)) # D x K
     D = fun.D
-    C = np.matmul(W.transpose(), np.ones([D, 1]))
-    fx = np.linspace(-np.sqrt(D) * np.abs(np.squeeze(C)), np.sqrt(D) * np.abs(np.squeeze(C)), num = 100).reshape([100, 1])
+    
+    fx_min, fx_max = find_enclosingbox(B, np.sqrt(D) * np.ones([D, 1]))
+    fx = np.linspace(fx_min, fx_max, num = 100).reshape([100, 1])
     fy = fun.evaluate(Z_to_Xhat(fx, W))[1]
     
-    mu, var, EI = gp.test(data, R.types, fx)
-    
-    pfxpp = np.concatenate([fx, np.reshape(mu, [-1, 1]), np.reshape(var, [-1, 1]), np.reshape(EI, [-1, 1])], axis = 1)
-    pfxpp = pfxpp[pfxpp[:, 0].argsort()]
+    mu, var, EI = gp.test(data, R.types, Z_to_Xhat(fx, W))
+           
     next_x = R.iterate(10000, np.array([True]))
+    EI_scaled = preprocessing.MinMaxScaler((np.min(fy),np.max(fy))).fit_transform(EI.reshape([-1, 1]))
     
-#    plt.figure()
-#    plt.plot(fx, fy)
-#    plt.scatter(X_to_Z(data['X'], W), data['y'])
-#
-#    plt.plot(fx, fun.evaluate(Z_to_Xhat(fx, fun.W))[1])
-#    plt.scatter(X_to_Z(data['X'], fun.W), data['y'])
-#    
     plt.figure()
     plt.plot(fx, fy)
     plt.scatter(X_to_Z(data['X'], W), data['y'])
-#    plt.plot(pfxpp[:, 0], (np.max(fy) - np.min(fy)) * (pfxpp[:, 3]) / (np.max(EI) - np.min(EI)) + min(fy), '-.')
-    plt.plot(pfxpp[:, 0], pfxpp[:, 1], 'k')
-    plt.plot(pfxpp[:, 0], pfxpp[:, 1] + np.sqrt(pfxpp[:, 2]), 'k:')
-    plt.plot(pfxpp[:, 0], pfxpp[:, 1] - np.sqrt(pfxpp[:, 2]), 'k:')
-    plt.scatter(np.matmul(data['X'][-1], W), np.min(data['y']), marker = 'x', color = 'g')
+    plt.plot(fx, mu, 'k')
+    plt.plot(fx, mu + np.sqrt(var), 'k:')
+    plt.plot(fx, mu - np.sqrt(var), 'k:')
+    plt.plot(fx, EI_scaled, '-.')
+    plt.scatter(X_to_Z(data['X'][-1], W), np.min(data['y']), marker = 'x', color = 'g')
     plt.title('N is ' + str(len(data['y'])))
     plt.show()
     
+    Psi2_star = np.sum(gp.debug(data, R.types, data['X'], 'Psi2_star').transpose().reshape([-1, 20, 20]).transpose([0, 2, 1]), axis = 0)
+    Psi2 = gp.debug(data, R.types, data['X'], 'Psi2')
     
-                    
+    
+#    debugs = gp.debug(data, R.types, np.matmul(fx, W.transpose()))
+#    fx1 = np.random.uniform(-1., 1., size = [1, 2])
+#    mu, var, EI = gp.test(data, R.types, fx1)    
+#    a = gp.debug(data, R.types, fx1)
+#    
+#    np.trace(np.matmul(np.matmul(a[1], a[1].transpose()), a[2]).reshape([50, 50]))
+#    
+#    np.exp(2 * gp.fitted_params['log_sigma_f']) * np.matmul(a[2], a[1])
+#    
+#    from scipy.io import savemat
+#    savemat('matdat', {'Lm' : Psi2_star, 'K_uu_Inv' : K_uu_Inv, 'Psi2_star' : Psi2_star})
+##    [self.debugs['var_star1'], self.debugs['var_star2'], self.debugs['var_star3'], self.debugs['K_uu_Inv'], self.debugs['A_Inv'], self.debugs['Psi2_star'], self.debugs['Lstar']]
+#    Lstar = np.squeeze(a[6])
+#    Lm = a[7]
+#    La = a[8]
+#    Psi2_star = np.squeeze(a[5])
+#    K_uu_Inv = a[3]
+#    np.trace(np.linalg.solve(Lm, np.transpose(np.linalg.solve(Lm, Psi2_star))))
+#    np.trace(solve_triangular(Lm, np.transpose(solve_triangular(Lm, Psi2_star))))
+#    np.trace(np.matmul(K_uu_Inv, Psi2_star))
+#    np.trace(np.matmul(K_uu_Inv, np.matmul(Lstar, Lstar.transpose())))
+#    np.matmul(Lstar, Lstar.transpose())
+#    
+#    np.trace(np.matmul(a[3], np.squeeze(a[5])))
+#    np.exp(2 * gp.fitted_params['log_tau']) * np.trace(np.matmul(a[4], np.squeeze(a[5])))
+#    np.exp(2 * gp.fitted_params['log_tau']) * a[0]
+#    
+#    np.exp(2 * gp.fitted_params['log_sigma_f']) * (np.exp(2 * gp.fitted_params['log_tau']) * a[0] - a[1] + np.exp(2 * gp.fitted_params['log_sigma_f']) * a[2] + 1)
+#    
+#    np.exp(2 * gp.fitted_params['log_tau']) * a[0] - a[1] + 1
+#                   
+
+Alpha = gp.debug(data, R.types, data['X'], 'Alpha')
+La = gp.debug(data, R.types, data['X'], 'La')
+A = gp.debug(data, R.types, data['X'], 'A')
+A_Inv = gp.debug(data, R.types, data['X'], 'A_Inv')
+LaInvLmInv = gp.debug(data, R.types, data['X'], 'LaInvLmInv')
+Psi1_star = gp.debug(data, R.types, data['X'], 'Psi1_star')
+YPsi1InvLmInvLa = gp.debug(data, R.types, data['X'], 'YPsi1InvLmInvLa')
+
+gp.debug(data, R.types, data['X'], 'test_BB') - YPsi1InvLmInvLa.transpose()
+
+np.linalg.solve(np.matmul(Lm, La), np.matmul(Psi1_star, data['y']))
+np.linalg.solve(La, np.linalg.solve(Lm, np.matmul(Psi1_star, data['y'])))
+
+Lm = gp.debug(data, R.types, data['X'], 'Lm')
+La = gp.debug(data, R.types, data['X'], 'La')
+
+K_uu_Inv = gp.debug(data, R.types, data['X'], 'K_uu_Inv')
+K_uu = gp.debug(data, R.types, data['X'], 'K_uu')
+mu_star = gp.debug(data, R.types, data['X'], 'mu_star')
+
+var_star1 = gp.debug(data, R.types, data['X'], 'var_star1')
+var_star11 = gp.debug(data, R.types, data['X'], 'var_star11')
+
+var_star2 = gp.debug(data, R.types, data['X'], 'var_star2')
+var_star22 = gp.debug(data, R.types, data['X'], 'var_star22')
+
+print var_star2
+print var_star22
+
+var_star3 = gp.debug(data, R.types, data['X'], 'var_star3')
+var_star33 = gp.debug(data, R.types, data['X'], 'var_star33')
+
+print var_star3
+print var_star33
+
+var_star1 = gp.debug(data, R.types, data['X'][1].reshape([-1, 2]), 'var_star1')
+var_star11 = gp.debug(data, R.types, data['X'][1].reshape([-1, 2]), 'var_star11')
+
+Psi2_star1 = gp.debug(data, R.types, data['X'][0].reshape([-1, 2]), 'Psi2_star')
+var_star1 = gp.debug(data, R.types, data['X'][0].reshape([-1, 2]), 'var_star1')
+np.matmul(Psi1_star, Alpha)
+
+
+import tensorflow as tf
+sess = tf.InteractiveSession()
+test = tf.reshape(tf.range(18.), [2, 3, 3])
+test = test
+Lm = tf.matrix_band_part(tf.reshape(tf.range(1., 10.), [3, 3]), -1, 0)
+La = tf.matrix_band_part(tf.reshape(tf.range(3., 12.), [3, 3]), -1, 0)
+
+print sess.run(tf.matrix_triangular_solve(La, tf.matrix_triangular_solve(Lm, \
+tf.transpose(tf.matrix_triangular_solve(La, tf.matrix_triangular_solve(Lm, test[0]))))))
+
+print sess.run(tf.matrix_triangular_solve(tf.matmul(Lm, La), \
+tf.transpose(tf.matrix_triangular_solve(tf.matmul(Lm, La), test[0]))))
+
+print sess.run(tf.trace(tf.matrix_triangular_solve(tf.matmul(Lm, La), \
+tf.transpose(tf.matrix_triangular_solve(tf.matmul(Lm, La), test[0])))))
+
+print sess.run(tf.trace(tf.matrix_solve(tf.matmul(tf.matmul(Lm, La), tf.transpose(tf.matmul(Lm, La))), test[0])))
+
+
+M = 3
+
+test1 = tf.transpose(tf.reshape(tf.transpose(test, [0, 2, 1]), [-1, M]))
+
+print sess.run(test)
+print sess.run(test1)
+
+test2 = tf.matrix_triangular_solve(La, tf.matrix_triangular_solve(Lm, test1))
+
+print sess.run(test2[:, :3])
+print sess.run(tf.matrix_triangular_solve(La, tf.matrix_triangular_solve(Lm, test[0])))
+
+test3 = tf.transpose(tf.reshape(tf.transpose(test2), [-1, M, M]), [0, 2, 1])
+
+print sess.run(test3)
+
+test4 = tf.transpose(tf.reshape(test3, [-1, M]))
+
+print sess.run(test4[:, :3])
+print sess.run(tf.transpose(tf.matrix_triangular_solve(tf.matmul(Lm, La), test[0])))
+
+test5 = tf.matrix_triangular_solve(La, tf.matrix_triangular_solve(Lm, test4))
+
+test6 = tf.transpose(tf.reshape(tf.transpose(test5), [-1, M, M]), [0, 2, 1])
+
+print sess.run(test6[0])
+
+print sess.run(tf.trace(test6))
+
+

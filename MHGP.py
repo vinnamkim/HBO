@@ -118,7 +118,9 @@ class MHGP:
             
             C = tf.matrix_triangular_solve(Lm, tf.transpose(tf.matrix_triangular_solve(Lm, Psi2))) # M x M
             
-            A = tau_sq * I_M + sigma_f_sq * C + JITTER_VALUE * I_M # M x M
+#            A = tau_sq * I_M + sigma_f_sq * C + JITTER_VALUE * I_M # M x M
+            
+            A = tau_sq * I_M + sigma_f_sq * C # M x M
             
             La = tf.cholesky(A) # M x M
             
@@ -159,30 +161,132 @@ class MHGP:
             
             ####### ACQUISITION FUNCTION INPUS #######
             
-            z_star = tf.placeholder(name = 'z_star', shape = [None, K], dtype = FLOATING_TYPE)
+            x_star = tf.placeholder(name = 'x_star', shape = [None, D], dtype = FLOATING_TYPE)
             max_fun = tf.placeholder(name = 'max_fun', shape = [], dtype = FLOATING_TYPE)
             beta = tf.placeholder(name = 'beta', shape = [], dtype = FLOATING_TYPE)
             
-            self.acq_inputs = {'z_star' : z_star, 'max_fun' : max_fun, 'beta' : beta}
+            self.acq_inputs = {'x_star' : x_star, 'max_fun' : max_fun, 'beta' : beta}
             
-            ####### z_star DISTRIBUTION #######
+            ####### x_star DISTRIBUTION #######
             
-            zz_star = tf.expand_dims(z_star, 1)  # z_star : L x K -> L x 1 x K
+            mu_x_star = tf.transpose(tf.expand_dims(tf.matmul(x_star, tf.transpose(mu)), 0)) # K x L x 1
             
-            sigma_f = tf.exp(log_sigma_f)
+            div_star = tf.transpose(tf.expand_dims(tf.matmul(tf.square(x_star), tf.transpose(Sigma_sq)), 0)) # K x L x 1
+            div_plusone_star = div_star + 1 # K x L x 1 # Check
+            twodiv_plusone_star = tf.transpose(tf.expand_dims(2 * div_star + 1, -1), [1, 0, 2, 3]) # L x K x 1 x 1
             
-            k_ustar_u = tf.exp(-0.5 * tf.reduce_sum(tf.square(Z - zz_star), axis = -1)) # L x M
+            Psi1_star = tf.reduce_prod(tf.rsqrt(div_plusone_star) * tf.exp(- tf.square(mu_x_star - ZZ) / (2 * div_plusone_star)), axis = 0) # L x M
             
-            k_ustar_uInvLm = tf.matrix_triangular_solve(Lm, tf.transpose(k_ustar_u)) # M x L
+            Psi1_starInvLm = tf.matrix_triangular_solve(Lm, tf.transpose(Psi1_star)) # M x L
             
-            k_ustar_uInvLmInvLa = tf.matrix_triangular_solve(La, k_ustar_uInvLm) # M x L
+            Psi1_starInvLmInvLa = tf.matrix_triangular_solve(La, Psi1_starInvLm) # M x L
+                                      
+            mu_star = tf.squeeze(sigma_f_sq * tf.matmul(tf.transpose(Psi1_starInvLmInvLa), tf.transpose(YPsi1InvLmInvLa))) # L
             
-            mu_star = tf.squeeze(sigma_f * tf.matmul(tf.transpose(k_ustar_uInvLmInvLa), tf.transpose(YPsi1InvLmInvLa))) # L x 1
+            #### CHECK ####
+                                
+            mu_xx_star = tf.transpose(tf.expand_dims(mu_x_star, -1), [1, 0, 2, 3]) # L x K x 1 x 1
             
-            var_star = tf.ones_like(mu_star, dtype = FLOATING_TYPE) - tf.reduce_sum(tf.transpose(tf.square(k_ustar_uInvLm)), axis = -1) + \
-            tau_sq * tf.reduce_sum(tf.transpose(tf.square(k_ustar_uInvLmInvLa)), axis = -1)
+            Psi22_star = tf.reduce_prod(tf.rsqrt(twodiv_plusone_star) * tf.exp(-tf.square(mu_xx_star - ZZZ) / twodiv_plusone_star), axis = 1) # L x M x M
+            
+            Psi2_star1 = Psi21 * Psi22_star # L x M x M
+            
+            Psi2_star = tf.transpose(tf.reshape(tf.transpose(Psi2_star1, [0, 2, 1]), [-1, M])) # M x (L x M)
+            
+#            LmInv = tf.matrix_triangular_solve(Lm, I_M)
+#            LaInv = tf.matrix_triangular_solve(La, I_M)
+#            LaInvLmInv = tf.matmul(LaInv, LmInv)
+#            
+#            K_uu_Inv = tf.matmul(tf.transpose(LmInv), LmInv)
+#            
+#            A_Inv = tf.matmul(tf.transpose(LaInvLmInv), LaInvLmInv)
+            
+#            test_AA = tf.matmul(A_Inv, tf.matmul(Lm, tf.transpose(tf.matmul(Lm, A))))
+#            test_BB = tf.matmul(tf.matrix_triangular_solve(tf.matmul(Lm, La), tf.transpose(Psi1)), y)
+#            Alpha = tf.matrix_triangular_solve(tf.transpose(La), tf.matrix_triangular_solve(tf.transpose(Lm), tf.transpose(YPsi1InvLmInvLa), lower = False), lower = False)
+#            Alpha = tf.matmul(tf.matmul(A_Inv, tf.transpose(Psi1)), y)
+            # M x 1
+
+            #1
+#            Psi2_starInvLm = tf.matrix_triangular_solve(Lm, Psi2_star)
+#            
+#            var_star1 = tf.matrix_triangular_solve(La, Psi2_starInvLm)
+#            
+#            var_star1 = tf.transpose(tf.reshape(tf.transpose(var_star1), [-1, M, M]), [0, 2, 1])
+#            
+#            var_star1 = tf.transpose(tf.reshape(var_star1, [-1, M]))
+#            
+#            var_star1 = tf.matrix_triangular_solve(La, tf.matrix_triangular_solve(Lm, var_star1))
+#            
+#            var_star1 = tf.transpose(tf.reshape(tf.transpose(var_star1), [-1, M, M]), [0, 2, 1])
+#            
+#            var_star1 = sigma_f_sq * tf.trace(var_star1)
+#            
+#            var_star11 = tf.trace(tf.reshape(tf.transpose(tf.matmul(sigma_f_sq * A_Inv, Psi2_star)), [-1, M, M]))
+#            
+            ########################
+            Psi2_starInvLm = tf.matrix_triangular_solve(Lm, Psi2_star)
+            
+            Psi2_starInvLm = tf.transpose(tf.reshape(tf.transpose(Psi2_starInvLm), [-1, M, M]), [0, 2, 1])
+            
+            InvLmPsi2_starInvLm = tf.matrix_triangular_solve(Lm, tf.transpose(tf.reshape(Psi2_starInvLm, [-1, M])))
+            
+            InvLmPsi2_starInvLm = tf.transpose(tf.reshape(tf.transpose(InvLmPsi2_starInvLm), [-1, M, M]), [0, 2, 1])
+            
+            
+            InvLmPsi2_starInvLmLa = tf.matrix_triangular_solve(La, tf.transpose(tf.reshape(tf.transpose(InvLmPsi2_starInvLm, [0, 2, 1]), [-1, M])))
+            
+            InvLmPsi2_starInvLmLa = tf.transpose(tf.reshape(tf.transpose(InvLmPsi2_starInvLmLa), [-1, M, M]), [0, 2, 1])
+            
+            InvLaInvLmPsi2_starInvLmLa = tf.matrix_triangular_solve(La, tf.transpose(tf.reshape(InvLmPsi2_starInvLmLa, [-1, M])))
+            
+            InvLaInvLmPsi2_starInvLmLa = tf.transpose(tf.reshape(tf.transpose(InvLaInvLmPsi2_starInvLmLa), [-1, M, M]), [0, 2, 1])
+            
+            var_star1 = sigma_f_sq * tf.trace(InvLaInvLmPsi2_starInvLmLa)
+            
+#            var_star11 = tf.trace(tf.reshape(tf.transpose(tf.matmul(sigma_f_sq * A_Inv, Psi2_star)), [-1, M, M]))
+            ####################
+            
+            #2
+            var_star2 = sigma_f_sq * tf.trace(InvLmPsi2_starInvLm)
+            
+#            var_star22 = tf.trace(tf.reshape(tf.transpose(tf.matmul(sigma_f_sq * K_uu_Inv, Psi2_star)), [-1, M, M]))
+            
+            #3
+            var_star3 = tf.square(sigma_f_sq) * tf.squeeze(tf.matmul(YPsi1InvLmInvLa, tf.transpose(tf.reshape(tf.matmul(YPsi1InvLmInvLa, tf.transpose(tf.reshape(InvLaInvLmPsi2_starInvLmLa, [-1, M]))), [-1, M]))))
+            
+#            var_star33 = tf.squeeze(tf.matmul(tf.reshape(tf.matmul(tf.transpose(sigma_f_sq * Alpha), Psi2_star), [-1, M]), sigma_f_sq * Alpha))
+            
+            var_star =  tau_sq * var_star1 - var_star2 + var_star3 + sigma_f_sq * tf.ones_like(mu_star) - tf.square(mu_star)
             
             F_acq = acq_fun(mu_star, var_star, max_fun, beta, method = ACQ_FUN)
+            
+#            ####### ACQUISITION FUNCTION INPUS #######
+#            
+#            z_star = tf.placeholder(name = 'z_star', shape = [None, K], dtype = FLOATING_TYPE)
+#            max_fun = tf.placeholder(name = 'max_fun', shape = [], dtype = FLOATING_TYPE)
+#            beta = tf.placeholder(name = 'beta', shape = [], dtype = FLOATING_TYPE)
+#            
+#            self.acq_inputs = {'z_star' : z_star, 'max_fun' : max_fun, 'beta' : beta}
+#            
+#            ####### z_star DISTRIBUTION #######
+#            
+#            zz_star = tf.expand_dims(z_star, 1)  # z_star : L x K -> L x 1 x K
+#            
+#            sigma_f = tf.exp(log_sigma_f)
+#            
+#            k_ustar_u = tf.exp(-0.5 * tf.reduce_sum(tf.square(Z - zz_star), axis = -1)) # L x M
+#            
+#            k_ustar_uInvLm = tf.matrix_triangular_solve(Lm, tf.transpose(k_ustar_u)) # M x L
+#            
+#            k_ustar_uInvLmInvLa = tf.matrix_triangular_solve(La, k_ustar_uInvLm) # M x L
+#            
+#            mu_star = tf.squeeze(sigma_f * tf.matmul(tf.transpose(k_ustar_uInvLmInvLa), tf.transpose(YPsi1InvLmInvLa))) # L x 1
+#            
+#            var_star = tf.ones_like(mu_star, dtype = FLOATING_TYPE) - tf.reduce_sum(tf.transpose(tf.square(k_ustar_uInvLm)), axis = -1) + \
+#            tau_sq * tf.reduce_sum(tf.transpose(tf.square(k_ustar_uInvLmInvLa)), axis = -1)
+#            
+#            F_acq = acq_fun(mu_star, var_star, max_fun, beta, method = ACQ_FUN)
             
             ####### OUTPUTS #######
             
@@ -196,7 +300,7 @@ class MHGP:
                             'var_star' : var_star,
                             'F_acq' : F_acq}
             
-            self.debug = locals()
+            self.debugs = locals()
             
     def fitting(self, data, types, Iter1 = 100, Iter2 = 500, init_method = 'pca'):
         FLOATING_TYPE = self.FLOATING_TYPE
@@ -307,17 +411,23 @@ class MHGP:
                     print inst
                     break
     
-    def test(self, data, types, z_star):
+    def test(self, data, types, x_star):
         X = data[types[0]]
         y = data[types[1]]
         max_fun = data[types[2]]
         beta = data['beta']
-        z_star = np.reshape(z_star, [-1, self.K])
+        
+        try:
+            if x_star.shape[1] is not self.D:
+                print 'Dimension error'
+                return None
+        except:
+            print 'Dimension error'
         
         with tf.Session(graph=self.graph) as sess:
             sess.run(tf.global_variables_initializer())
             
-            feed_dict = {self.inputs['X'] : X, self.inputs['y'] : y, self.acq_inputs['z_star'] : z_star, self.acq_inputs['max_fun'] : max_fun, self.acq_inputs['beta'] : beta}
+            feed_dict = {self.inputs['X'] : X, self.inputs['y'] : y, self.acq_inputs['x_star'] : x_star, self.acq_inputs['max_fun'] : max_fun, self.acq_inputs['beta'] : beta}
             
             for key in self.fitted_params.keys():
                 sess.run(self.params[key].assign(self.fitted_params[key]))
@@ -326,25 +436,32 @@ class MHGP:
         
         return [mu, var, F_acq]
     
-    def debug(self, data, types, z_star):
+    def debug(self, data, types, x_star, var):
         X = data[types[0]]
         y = data[types[1]]
         max_fun = data[types[2]]
         beta = data['beta']
-        z_star = np.reshape(z_star, [-1, self.K])
         
+        try:
+            if x_star.shape[1] is not self.D:
+                print 'Dimension error'
+                return None
+        except:
+            print 'Dimension error'
+            
         with tf.Session(graph=self.graph) as sess:
             sess.run(tf.global_variables_initializer())
             
-            feed_dict = {self.inputs['X'] : X, self.inputs['y'] : y, self.acq_inputs['z_star'] : z_star, self.acq_inputs['max_fun'] : max_fun, self.acq_inputs['beta'] : beta}
+            feed_dict = {self.inputs['X'] : X, self.inputs['y'] : y, self.acq_inputs['x_star'] : x_star, self.acq_inputs['max_fun'] : max_fun, self.acq_inputs['beta'] : beta}
             
             for key in self.fitted_params.keys():
                 sess.run(self.params[key].assign(self.fitted_params[key]))
             
-            debugs = sess.run([self.debugs['k_ustar_u'], self.debugs['k_ustar_uInvLm'], self.debugs['k_ustar_uInvLmInvLa'], self.debugs['Lm'], self.debugs['La']], feed_dict)
-            params = sess.run(self.params[key])
+#            debugs = sess.run([self.debugs['var_star1'], self.debugs['var_star2'], self.debugs['var_star3'], self.debugs['K_uu_Inv'], self.debugs['A_Inv'], self.debugs['Psi2_star'], self.debugs['Lm'], self.debugs['La'], self.debugs['Psi1_star']], feed_dict)
+            
+            debugs = sess.run(self.debugs[var], feed_dict)
         
-        return debugs, params
+        return debugs
     
     def finding_next(self, data, types, B, num_sample, effective_dims):
         X = data[types[0]]
@@ -366,9 +483,11 @@ class MHGP:
         
         z_star = sample_enclosingbox(A, b, num_sample)
         
+        x_star = np.matmul(z_star, A.transpose())
+        
         feed_dict = {self.inputs['X'] : X,
                      self.inputs['y'] : y,
-                     self.acq_inputs['z_star'] : z_star,
+                     self.acq_inputs['x_star'] : x_star,
                      self.acq_inputs['max_fun'] : max_fun,
                      self.acq_inputs['beta'] : beta}
         
@@ -384,9 +503,9 @@ class MHGP:
             except Exception as inst:
                 print inst
 
-        z_next = z_star[np.argmax(obj)]
+        x_next = x_star[np.argmax(obj)]
         
-        return np.reshape(z_next, [1, K])
+        return np.reshape(x_next, [1, -1])
 
 #def main(N = 100, D = 10, M = 10, K = 10, Iter1 = 100, Iter2 = 500):
 #    mhgp = MHGP(M, K, D)
