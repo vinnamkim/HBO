@@ -184,7 +184,7 @@ class GP:
             
             train_dict.update(self.params)
             
-            print('TRAIN_STEP')
+#            print('TRAIN_STEP')
             
             for i in xrange(Iter):
                 try:
@@ -195,8 +195,8 @@ class GP:
                         for key in self.fitted_params.keys():
                             self.fitted_params[key] = train_step[key]
                     
-                    if i % 100 is 0:
-                        print i, train_step['OBJ']
+#                    if i % 100 is 0:
+#                        print i, train_step['OBJ']
                         
                 except Exception as inst:
                     print inst
