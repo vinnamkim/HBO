@@ -51,7 +51,7 @@ class BSLBO:
         self.ACQ_FUN = ACQ_FUN
         self.M = M
     
-    def iterate(self, num_sample, effective_dims):
+    def iterate(self, num_sample):
         M = self.M
         D = self.D
         K = self.K
@@ -62,17 +62,23 @@ class BSLBO:
         gp = self.gp
         ACQ_FUN = self.ACQ_FUN
         
-        W = gp.fitted_params['mu'].transpose()
+        W = gp.fitted_params['mu']
+        W = W[np.argmax(gp.l_square), :].reshape([-1, R.D])
+        W = W.transpose()
+    
         WT = np.transpose(W)
         WTW = np.matmul(WT, W)
-        B = np.transpose(np.linalg.solve(WTW, WT)) # D x K
+        A = np.transpose(np.linalg.solve(WTW, WT)) # D x Ke
+        Ke = A.shape[1]
         
-        next_x = gp.finding_next(data, types, B, num_sample, effective_dims)
-        next_x, next_y = fun.evaluate(next_x)
+        b = np.sqrt(Ke) * np.ones([D, 1])
+        
+        next_x_uncliped, next_x_obj = gp.finding_next(data, types, A, b, num_sample)
+        next_x, next_y = fun.evaluate(next_x_uncliped)
         
         data['X'] = np.append(data['X'], next_x, axis = 0)
         data['y'] = np.append(data['y'], next_y, axis = 0)
-        
+         
         data['y_scaled'] = scaler.fit_transform(data['y'])
         
         data['max_fun'] = np.max(data['y'])
@@ -89,16 +95,20 @@ class BSLBO:
         
         return next_x
 
+
 #fun = functions.sinc_simple2()
-fun = functions.sinc_simple2()
+fun = functions.sinc_simple10()
 #fun = functions.sinc_simple()
-R = BSLBO(fun, 1, 10, 10, ACQ_FUN = 'UCB')
+R = BSLBO(fun, 5, 10, 10, ACQ_FUN = 'UCB')
 
 for i in xrange(10):
     data = R.data
     gp = R.gp
     
-    W = gp.fitted_params['mu'].transpose()
+#    W = gp.fitted_params['mu'].transpose()
+    W = gp.fitted_params['mu']
+    W = W[4, :].reshape([-1, R.D])
+    W = W.transpose()
     
 #    W = fun.W
     WT = np.transpose(W)
@@ -112,7 +122,7 @@ for i in xrange(10):
     
     mu, var, EI = gp.test(data, R.types, Z_to_Xhat(fx, W))
            
-    next_x = R.iterate(10000, np.array([True]))
+#    next_x = R.iterate(10000, np.array([True]))
     EI_scaled = preprocessing.MinMaxScaler((np.min(fy),np.max(fy))).fit_transform(EI.reshape([-1, 1]))
     
     plt.figure()
@@ -125,6 +135,8 @@ for i in xrange(10):
     plt.scatter(X_to_Z(data['X'][-1], W), np.min(data['y']), marker = 'x', color = 'g')
     plt.title('N is ' + str(len(data['y'])))
     plt.show()
+    
+    
     
     Psi2_star = np.sum(gp.debug(data, R.types, data['X'], 'Psi2_star').transpose().reshape([-1, 20, 20]).transpose([0, 2, 1]), axis = 0)
     Psi2 = gp.debug(data, R.types, data['X'], 'Psi2')

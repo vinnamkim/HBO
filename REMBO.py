@@ -24,6 +24,7 @@ class REMBO:
         W = np.random.normal(size = [D, K]).astype(dtype = settings.dtype)
         
         data['Z'] = np.random.uniform(low = -np.sqrt(D), high = np.sqrt(D), size = [N, K]).astype(dtype = settings.dtype)
+        
         data['X'], data['y'] = fun.evaluate(np.matmul(data['Z'], np.transpose(W)))
         data['max_fun'] = np.max(data['y'])
         
@@ -74,7 +75,7 @@ class REMBO:
         return next_x
         
 fun = functions.sinc_simple10()
-R = REMBO(fun, 1, 2, ACQ_FUN = 'UCB', SEARCH_METHOD = 'random', iter_fit = 500)
+R = REMBO(fun, 1, 100, ACQ_FUN = 'UCB', SEARCH_METHOD = 'random', iter_fit = 500)
 
 for i in xrange(10):
     data = R.data

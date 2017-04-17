@@ -371,7 +371,7 @@ class MHGP:
             
             ####### TRAIN_STEP1 #######
             
-            print('TRAIN_STEP1')
+#            print('TRAIN_STEP1')
             
             for i in xrange(Iter1):
                 try:
@@ -392,7 +392,7 @@ class MHGP:
             
             ####### TRAIN_STEP2 #######
             
-            print('TRAIN_STEP2')
+#            print('TRAIN_STEP2')
             
             for i in xrange(Iter2):
                 try:
@@ -463,23 +463,11 @@ class MHGP:
         
         return debugs
     
-    def finding_next(self, data, types, B, num_sample, effective_dims):
+    def finding_next(self, data, types, A, b, num_sample):
         X = data[types[0]]
         y = data[types[1]]
         max_fun = data[types[2]]
         beta = data['beta']
-        K = self.K
-        D = self.D
-        
-        A = B.transpose()
-        
-        A = A[effective_dims]
-        
-        A = A.transpose()
-        
-        Ke = np.sum(effective_dims)
-        
-        b = np.sqrt(Ke) * np.ones([D, 1], dtype = settings.dtype)
         
         z_star = sample_enclosingbox(A, b, num_sample)
         
@@ -505,7 +493,7 @@ class MHGP:
 
         x_next = x_star[np.argmax(obj)]
         
-        return np.reshape(x_next, [1, -1])
+        return np.reshape(x_next, [1, -1]), obj
 
 #def main(N = 100, D = 10, M = 10, K = 10, Iter1 = 100, Iter2 = 500):
 #    mhgp = MHGP(M, K, D)

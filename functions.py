@@ -15,6 +15,20 @@ class function:
         eval_x = np.clip(eval_x, self.x_min, self.x_max)
         return eval_x, self.f(eval_x)
     
+    def beta(self, data):
+        N = len(data['y'])
+        D = self.D
+        t = N + 1
+        a = settings.UCB_a
+        b = settings.UCB_b
+        r = settings.UCB_r
+        delta = settings.UCB_delta
+        
+        beta = 2 * (np.log(2) + 2 * np.log(t) + 2 * np.log(np.pi) - np.log(3) - np.log(delta)) + \
+        2 * D * (2 * np.log(t) + np.log(D) + np.log(b) + np.log(r) + 0.5 * np.log(np.log(4) + np.log(D) + np.log(a) - np.log(delta)))
+        
+        return beta
+    
     def update(self, next_x, data):
         next_y = self.evaluate(next_x)
         try:
@@ -30,20 +44,6 @@ class function:
         
         return
     
-    def beta(self, data):
-        N = len(data['y'])
-        D = self.D
-        t = N + 1
-        a = settings.UCB_a
-        b = settings.UCB_b
-        r = settings.UCB_r
-        delta = settings.UCB_delta
-        
-        beta = 2 * (np.log(2) + 2 * np.log(t) + 2 * np.log(np.pi) - np.log(3) - np.log(delta)) + \
-        2 * D * (2 * np.log(t) + np.log(D) + np.log(b) + np.log(r) + 0.5 * np.log(np.log(4) + np.log(D) + np.log(a) - np.log(delta)))
-        
-        return beta
-        
     def gen_data(self, N):
         D = self.D
         FLOATING_TYPE = self.FLOATING_TYPE
@@ -101,7 +101,15 @@ class sinc_simple10(function):
         
     def f(self, x):
         return np.sinc(np.pi * np.matmul(x, self.W))
-    
+ 
+class brainin(function):
+    def __init__(self, D, FLOATING_TYPE = settings.dtype):
+        self.FLOATING_TYPE = FLOATING_TYPE
+        self.D = D
+        self.x_scale
+        self.x_max
+        self.x_min
+        
 #
 #class sinc_simple():
 #    def __init__(self, FLOATING_TYPE = settings.dtype):
