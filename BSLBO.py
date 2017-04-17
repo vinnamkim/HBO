@@ -33,7 +33,7 @@ class BSLBO:
         data['scaled_max_fun'] = np.array(1.0, dtype = settings.dtype)
         data['beta'] = fun.beta(data)
                 
-        types = ['X', 'y', 'scaled_max_fun']
+        types = ['X', 'y_scaled', 'scaled_max_fun']
 #        types = ['X', 'y', 'max_fun']
         
         M = min(Max_M, M)

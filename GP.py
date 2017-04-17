@@ -7,6 +7,7 @@ Created on Wed Mar 29 16:41:37 2017
 """
 
 import numpy as np
+np.seterr(all='raise')
 import tensorflow as tf
 import settings
 from sampling import hit_and_run
@@ -160,7 +161,10 @@ class GP:
         
         var_y = np.var(y)
         
-        init_value = {'log_sigma' : 0.5 * np.log(var_y), 'log_noise' : 0.5 * np.log(var_y / 100)}
+        try:
+            init_value = {'log_sigma' : 0.5 * np.log(var_y), 'log_noise' : 0.5 * np.log(var_y / 100)}
+        except:
+            init_value = {'log_sigma' : 0.5 * np.log(var_y + 1), 'log_noise' : 0.5 * np.log((var_y + 1) / 100)}
         
         for key in init_value.keys():
             self.fitted_params[key] = init_value[key]

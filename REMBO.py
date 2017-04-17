@@ -66,7 +66,7 @@ class REMBO:
         data['X'] = np.append(data['X'], next_x, axis = 0)
         data['y'] = np.append(data['y'], next_y, axis = 0)
         
-        data['y_scaled'] = scaler.fit_transform(data['y_scaled'])
+        data['y_scaled'] = scaler.fit_transform(data['y'])
         
         data['beta'] = fun.beta(data)
         

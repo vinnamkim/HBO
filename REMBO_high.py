@@ -11,8 +11,8 @@ import numpy as np
 #import matplotlib.pyplot as plt
 from sklearn import preprocessing
 import settings
-#import functions
-#from util_func import X_to_Z, Z_to_Xhat
+import functions
+from util_func import X_to_Z, Z_to_Xhat
 
 class REMBO:
     def __init__(self, fun, K, N, ACQ_FUN, SEARCH_METHOD, iter_fit):
@@ -39,7 +39,7 @@ class REMBO:
         data['scaled_max_fun'] = np.array(1.0, dtype = settings.dtype)
         
 #        types = ['Z', 'y_scaled', 'scaled_max_fun']
-        types = ['X', 'y', 'max_fun']
+        types = ['X', 'y_scaled', 'scaled_max_fun']
         
         data['beta'] = fun.beta(data)
         
@@ -71,7 +71,7 @@ class REMBO:
         x_star = np.matmul(z_star, W.transpose())
         
 #        x_star = np.clip(x_star, -1.0, 1.0)
-        
+#        print x_star.shape
         idx, obj = gp.find_next(data, types, x_star)
         
         next_x, next_y = fun.evaluate(x_star[idx].reshape([1, -1]))
@@ -81,7 +81,7 @@ class REMBO:
         data['X'] = np.append(data['X'], next_x, axis = 0)
         data['y'] = np.append(data['y'], next_y, axis = 0)
         
-        data['y_scaled'] = scaler.fit_transform(data['y_scaled'])
+        data['y_scaled'] = scaler.fit_transform(data['y'])
         
         data['beta'] = fun.beta(data)
         
@@ -89,8 +89,6 @@ class REMBO:
         
         return next_x
 #        
-#fun = functions.sinc_simple10()
-#R = REMBO(fun, 1, 100, ACQ_FUN = 'UCB', SEARCH_METHOD = 'random', iter_fit = 500)
 #
 #for i in xrange(10):
 #    data = R.data

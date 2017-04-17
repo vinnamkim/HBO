@@ -5,6 +5,8 @@ Created on Tue Apr 18 00:16:24 2017
 
 @author: vinnam
 """
+import logging
+logging.getLogger("tensorflow").setLevel(logging.WARNING)
 
 from REMBO_high import REMBO
 import functions
@@ -12,16 +14,16 @@ import os
 import numpy as np
 
 def main():
-    runs = 20
+    runs = 1
     result = []
     
     for i in xrange(runs):
-        print 'RUN : ' + str(i + 1)
         fun = functions.brainin(10)
         init_N = 2
         R = REMBO(fun, 5, init_N, ACQ_FUN = 'UCB', SEARCH_METHOD = 'random', iter_fit = 500)
         
-        for j in xrange(500-init_N):
+        for j in xrange(5-init_N):
+            print 'RUN : ' + str(i + 1) + ' ' + 'ITER : ' + str(j + 1)
             R.iterate(500, 10000)
     
         result.append(R.data['y'])

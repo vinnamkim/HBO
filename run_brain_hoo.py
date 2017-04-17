@@ -12,15 +12,17 @@ import os
 import numpy as np
 
 def main():
-    runs = 20
+    runs = 1
     result = []
     
     for i in xrange(runs):
-        print 'RUN : ' + str(i + 1)
         fun = functions.brainin(10)
-        R = BSLBO(fun, 5, 5, 5, 4, 0.5, 100, ACQ_FUN = 'UCB')
+        init_N = 5
         
-        for j in xrange(495):
+        R = BSLBO(fun, 5, init_N, init_N, 4, 0.5, 100, ACQ_FUN = 'UCB')
+        
+        for j in xrange(10 - init_N):
+            print 'RUN : ' + str(i + 1) + ' ' + 'ITER : ' + str(j + 1)
             R.iterate(10000)
     
         result.append(R.data['y'])
@@ -36,5 +38,4 @@ def main():
     np.save(file_path, result)
     
 if __name__ == "__main__":
-    main()    
-
+    main()
