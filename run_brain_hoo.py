@@ -12,15 +12,15 @@ import os
 import numpy as np
 
 def main():
-    runs = 2
+    runs = 20
     result = []
     
     for i in xrange(runs):
         print 'RUN : ' + str(i + 1)
         fun = functions.brainin(10)
-        R = BSLBO(fun, 5, 10, 10, 4, 0.5, 100, ACQ_FUN = 'UCB')
+        R = BSLBO(fun, 5, 2, 2, 4, 0.5, 100, ACQ_FUN = 'UCB')
         
-        for j in xrange(1):
+        for j in xrange(498):
             R.iterate(10000)
     
         result.append(R.data['y'])
