@@ -8,11 +8,11 @@ Created on Wed Apr  5 15:56:00 2017
 
 from GP import GP
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from sklearn import preprocessing
 import settings
-import functions
-from util_func import X_to_Z, Z_to_Xhat
+#import functions
+#from util_func import X_to_Z, Z_to_Xhat
 
 class REMBO:
     def __init__(self, fun, K, N, ACQ_FUN, SEARCH_METHOD, iter_fit):
