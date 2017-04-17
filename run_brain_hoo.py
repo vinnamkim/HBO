@@ -12,16 +12,18 @@ import os
 import numpy as np
 
 def main():
-    runs = 1
+    runs = 20
+    init_N = 5
+    num_Iter = 500
+    
     result = []
     
     for i in xrange(runs):
         fun = functions.brainin(10)
-        init_N = 5
         
         R = BSLBO(fun, 5, init_N, init_N, 4, 0.5, 100, ACQ_FUN = 'UCB')
         
-        for j in xrange(10 - init_N):
+        for j in xrange(num_Iter - init_N):
             print 'RUN : ' + str(i + 1) + ' ' + 'ITER : ' + str(j + 1)
             R.iterate(10000)
     

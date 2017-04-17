@@ -14,15 +14,18 @@ import os
 import numpy as np
 
 def main():
-    runs = 1
+    runs = 20
+    init_N = 5
+    num_Iter = 500
+    
     result = []
     
     for i in xrange(runs):
         fun = functions.brainin(10)
-        init_N = 2
+        
         R = REMBO(fun, 5, init_N, ACQ_FUN = 'UCB', SEARCH_METHOD = 'random', iter_fit = 500)
         
-        for j in xrange(5-init_N):
+        for j in xrange(num_Iter - init_N):
             print 'RUN : ' + str(i + 1) + ' ' + 'ITER : ' + str(j + 1)
             R.iterate(500, 10000)
     
