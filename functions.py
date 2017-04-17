@@ -106,9 +106,25 @@ class brainin(function):
     def __init__(self, D, FLOATING_TYPE = settings.dtype):
         self.FLOATING_TYPE = FLOATING_TYPE
         self.D = D
-        self.x_scale
-        self.x_max
-        self.x_min
+        self.x_max = np.array([10., 15.], dtype = self.FLOATING_TYPE)
+        self.x_min = np.array([-5., 0.], dtype = self.FLOATING_TYPE)
+        
+        self.x_scale = 0.5 * (self.x_max - self.x_min)
+        self.x_bias = (self.x_max + self.x_min) / (self.x_max - self.x_min)
+        
+        self.eff_indices = np.random.permutation(10)[0:2]
+#        self.eff_vec = np.zeros([D, 1], dtype = self.FLOATING_TYPE)
+#        self.eff_vec[self.eff_indices] = 1.
+    
+    def f(self, x):
+        x1 = x[:, 0]
+        x2 = x[:, 1]
+        return np.square(x2 - 5.1 / np.square(2 * np.pi) * np.square(x1) + 5 * x1 / np.pi - 6) + 10 * (1 - 1 / (8 * np.pi)) * np.cos(x1) + 10
+    
+    def evaluate(self, x):
+        eval_x = np.clip(x, -1., 1.)
+        eff_x = eval_x[:, self.eff_indices]
+        return eval_x, -self.f(self.x_scale * (eff_x + self.x_bias)).reshape([-1, 1])
         
 #
 #class sinc_simple():
