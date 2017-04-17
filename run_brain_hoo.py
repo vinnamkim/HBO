@@ -18,9 +18,9 @@ def main():
     for i in xrange(runs):
         print 'RUN : ' + str(i + 1)
         fun = functions.brainin(10)
-        R = BSLBO(fun, 5, 2, 2, 4, 0.5, 100, ACQ_FUN = 'UCB')
+        R = BSLBO(fun, 5, 5, 5, 4, 0.5, 100, ACQ_FUN = 'UCB')
         
-        for j in xrange(498):
+        for j in xrange(495):
             R.iterate(10000)
     
         result.append(R.data['y'])
