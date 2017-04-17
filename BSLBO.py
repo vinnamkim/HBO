@@ -8,7 +8,6 @@ Created on Wed Apr  5 15:56:00 2017
 
 from MHGP import MHGP
 import numpy as np
-import matplotlib.pyplot as plt
 from sklearn import preprocessing
 import settings
 import functions
@@ -74,7 +73,7 @@ class BSLBO:
         cond = np.sqrt(gp.l_square) > L
         
         if np.any(cond):
-            W = Mu[cond, :].reshape([-1, R.D])
+            W = Mu[cond, :].reshape([-1, D])
         else:
             W = Mu[np.argsort(gp.l_square)[0:Kr], :]
         
@@ -113,6 +112,8 @@ class BSLBO:
         return next_x
 
 def test():
+    import matplotlib.pyplot as plt
+    
     fun = functions.brainin(10)
     #fun = functions.sinc_simple2()
     #fun = functions.sinc_simple10()
