@@ -24,7 +24,7 @@ def acq_fun(mu_star, var_star, max_fun, beta, method):
         return mu_star + tf.sqrt(beta) * tf.sqrt(var_star)
     
 class MHGP:
-    def __init__(self, K, D, KL_TYPE = 'ML2', LEARNING_RATE = 1e-1, ACQ_FUN = 'EI'):
+    def __init__(self, M, K, D, KL_TYPE = 'ML2', LEARNING_RATE = 1e-1, ACQ_FUN = 'EI'):
         FLOATING_TYPE = settings.dtype
         JITTER_VALUE = settings.jitter
         
@@ -32,8 +32,10 @@ class MHGP:
         self.JITTER_VALUE = JITTER_VALUE
         self.ACQ_FUN = ACQ_FUN
         
+        self.fitted_params = {'mu' : None, 'Z' : None, 'log_Sigma' : None, 'log_sigma_f' : None, 'log_tau' : None}
         self.l_square = None
         
+        self.M = M
         self.K = K
         self.D = D
         
@@ -54,28 +56,23 @@ class MHGP:
             self.inputs = {'X' : X,
                           'y' : y}
             
-            Z = tf.placeholder(name = 'Z', shape = [None, K], dtype = FLOATING_TYPE)
-            mu = tf.placeholder(name = 'mu', shape = [K, D], dtype = FLOATING_TYPE)
-            log_Sigma = tf.placeholder(name = 'log_Sigma', shape = [K, D], dtype = FLOATING_TYPE)
-            log_sigma_f = tf.placeholder(name = 'log_sigma_f', shape = [], dtype = FLOATING_TYPE)
-            log_tau = tf.placeholder(name = 'log_tau', shape = [], dtype = FLOATING_TYPE)
+            Z = tf.get_variable('Z', initializer = tf.random_uniform_initializer(), shape = [M, K], dtype = FLOATING_TYPE)
+            mu = tf.get_variable('mu', initializer = tf.random_uniform_initializer(), shape = [K, D], dtype = FLOATING_TYPE)
+            log_Sigma = tf.get_variable('log_Sigma', initializer = tf.random_uniform_initializer(), shape = [K, D], dtype = FLOATING_TYPE)
+            log_sigma_f = tf.get_variable('log_sigma_f', initializer = tf.random_uniform_initializer(), shape = [], dtype = FLOATING_TYPE)
+            log_tau = tf.get_variable('log_tau', initializer = tf.random_uniform_initializer(), shape = [], dtype = FLOATING_TYPE)
             
-            self.vi_params = {'Z' : Z, 'mu' : mu, 'log_Sigma' : log_Sigma}
-            
-            self.kernel_params = {'log_sigma_f' : log_sigma_f, 'log_tau' : log_tau}
-            
-            self.params = {}
-            self.params.update(self.vi_params)
-            self.params.update(self.kernel_params)
+            self.params = {'Z' : Z,
+                          'mu' : mu,
+                          'log_Sigma' : log_Sigma,
+                          'log_sigma_f' : log_sigma_f,
+                          'log_tau' : log_tau}
             
             ####### CONSTANTS #######
             
             # N, K, D, M are constants
-            N = tf.shape(y)[0]
-            M = tf.shape(Z)[0]
-            
-            N_ = tf.cast(N, dtype = FLOATING_TYPE, name = 'N')
-            M_ = tf.cast(M, dtype = FLOATING_TYPE, name = 'M')
+            N_ = tf.cast(tf.shape(y)[0], dtype = FLOATING_TYPE, name = 'N')
+            M_ = tf.constant(M, name = 'M', dtype = FLOATING_TYPE)
             D_ = tf.constant(D, name = 'D', dtype = FLOATING_TYPE)
             #K_ = tf.constant(K, name = 'K', dtype = FLOATING_TYPE)
             pi_ = tf.constant(np.pi, name = 'PI', dtype = FLOATING_TYPE)
@@ -156,11 +153,11 @@ class MHGP:
             
             OBJ_train = - (F - KL)
     
-#            opt = tf.train.AdamOptimizer(learning_rate = LEARNING_RATE)
-#    
-#            train_op1 = opt.minimize(OBJ_train, var_list = [Z, mu, log_Sigma])
-#    
-#            train_op2 = opt.minimize(OBJ_train)
+            opt = tf.train.AdamOptimizer(learning_rate = LEARNING_RATE)
+    
+            train_op1 = opt.minimize(OBJ_train, var_list = [Z, mu, log_Sigma])
+    
+            train_op2 = opt.minimize(OBJ_train)
             
             ####### ACQUISITION FUNCTION INPUS #######
             
@@ -293,34 +290,27 @@ class MHGP:
             
             ####### OUTPUTS #######
             
-#            self.outputs = {'F' : F,
-#                            'KL' : KL,
-#                            'OBJ' : OBJ_train,
-#                            'l_square': l_square,
-#                            'train_op1' : train_op1,
-#                            'train_op2' : train_op2,
-#                            'mu_star' : mu_star,
-#                            'var_star' : var_star,
-#                            'F_acq' : F_acq}
+            self.outputs = {'F' : F,
+                            'KL' : KL,
+                            'OBJ' : OBJ_train,
+                            'l_square': l_square,
+                            'train_op1' : train_op1,
+                            'train_op2' : train_op2,
+                            'mu_star' : mu_star,
+                            'var_star' : var_star,
+                            'F_acq' : F_acq}
             
-            self.train_f = OBJ_train
-            self.train_g = tf.concat([tf.reshape(g, [-1]) for g in tf.gradients(OBJ_train, [Z, mu, log_Sigma, log_sigma_f, log_tau])], 0)
-            self.l_square = l_square
-            self.mu_star = mu_star
-            self.var_star = var_star
-            self.acq_f = F_acq
-            self.acq_g = tf.gradients(F_acq, x_star)
-            self.init = tf.global_variables_initializer()
-        
-#            self.debugs = locals()
+            self.debugs = locals()
             
-    def fitting(self, data, types, N, M, Iter1 = 100, Iter2 = 500, init_method = 'pca'):
+    def fitting(self, data, types, Iter1 = 100, Iter2 = 500, init_method = 'pca'):
         FLOATING_TYPE = self.FLOATING_TYPE
         
         ####### INIT VALUES OF PARAMETERS #######
         
         X = data[types[0]]
         y = data[types[1]]
+        N = np.shape(data['y'])[0]
+        M = self.M
         K = self.K
         D = self.D
         

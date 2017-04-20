@@ -367,3 +367,10 @@ sess.run(a)
 sess.run(b[0, :, :])
 
 
+init = tf.placeholder(dtype = 'float32', shape = [])
+var = tf.Variable(init, validate_shape = False)
+obj = tf.reduce_sum(tf.square(var))
+opt = tf.train.AdamOptimizer(learning_rate = 1e-1)
+train_op1 = opt.minimize(obj)
+
+sess.run

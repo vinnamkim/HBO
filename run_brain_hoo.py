@@ -23,6 +23,8 @@ def main():
         
         R = BSLBO(fun, 5, init_N, init_N, 4, 0.5, 100, ACQ_FUN = 'UCB')
         
+        R = BSLBO(fun, 5, init_N, 100, 4, 0.5, 100, ACQ_FUN = 'UCB')
+        
         for j in xrange(num_Iter - init_N):
             print 'RUN : ' + str(i + 1) + ' ' + 'ITER : ' + str(j + 1)
             R.iterate(10000)
