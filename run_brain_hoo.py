@@ -12,23 +12,21 @@ import os
 import numpy as np
 
 def main():
-    runs = 20
-    init_N = 5
-    num_Iter = 500
+    runs = 1
+    init_N = 10
+    num_Iter = 5
     
     result = []
     
     for i in xrange(runs):
         fun = functions.brainin(10)
         
-        R = BSLBO(fun, 5, init_N, init_N, 4, 0.5, 100, ACQ_FUN = 'UCB')
-        
-        R = BSLBO(fun, 5, init_N, 100, 4, 0.5, 100, ACQ_FUN = 'UCB')
-        
+        R = BSLBO(fun, 5, init_N, 4, 0.5, 100, ACQ_FUN = 'UCB')
+        BSLBO()
         for j in xrange(num_Iter - init_N):
             print 'RUN : ' + str(i + 1) + ' ' + 'ITER : ' + str(j + 1)
             R.iterate(10000)
-    
+            
         result.append(R.data['y'])
     
     result = np.concatenate(result, axis = 1)

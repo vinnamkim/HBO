@@ -13,7 +13,6 @@ from sklearn import preprocessing, decomposition
 from scipy.optimize import minimize
 import settings
 import functions
-import matplotlib.pyplot as plt
 from util_func import X_to_Z, Z_to_Xhat
 from sampling import find_enclosingbox, sample_enclosingbox
 
@@ -114,6 +113,20 @@ class BSLBO:
         
         return f, g
         
+    def acq_obj(self, x_star):
+        feed_dict = {self.gp.inputs['X'] : self.data[self.types[0]],
+                     self.gp.inputs['y'] : self.data[self.types[1]],
+                     self.gp.acq_inputs['x_star'] : np.reshape(x_star, [1, -1]),
+                     self.gp.acq_inputs['max_fun'] : self.data[self.types[2]],
+                     self.gp.acq_inputs['beta'] : self.data['beta']}
+        
+        for param in self.fitted_params.keys():
+            feed_dict[self.gp.params[param]] = self.fitted_params[param]
+            
+        f, g = self.session.run([self.gp.acq_f, self.gp.acq_g], feed_dict)
+        
+        return np.negative(f).squeeze(), np.negative(g).squeeze()
+    
     def init_params(self, init_method = 'pca'):
         FLOATING_TYPE = self.FLOATING_TYPE
         
@@ -164,6 +177,7 @@ class BSLBO:
         train_step2 = ObjectiveWrapper(self.train_obj, 1)
         
         x0 = self.init_params(init_method = init_method)
+#        print x0[-2:-1]
         
         result = minimize(fun = train_step1,
                           x0 = x0,
@@ -175,6 +189,7 @@ class BSLBO:
                           #options = {'maxiter' : max_iter1, 'gtol' : np.finfo('float64').min})
     
         x0 = result.x
+#        print x0[-2:-1]
         
         result = minimize(fun = train_step2,
                           x0 = x0,
@@ -199,8 +214,8 @@ class BSLBO:
     def test(self, x_star):
         X = self.data[self.types[0]]
         y = self.data[self.types[1]]
-        max_fun = data[self.types[2]]
-        beta = data['beta']
+        max_fun = self.data[self.types[2]]
+        beta = self.data['beta']
         
         try:
             if x_star.shape[1] is not self.D:
@@ -253,7 +268,25 @@ class BSLBO:
                 print 'LLT error'
                 continue
             
-        return np.reshape(x_next, [1, -1]), obj
+        x0 = x_next + 1
+        print x0
+#        print obj
+        acq_step = ObjectiveWrapper(self.acq_obj, 1)
+        
+#        print acq_step(x0)
+        
+        result = minimize(fun = acq_step,
+                          x0 = x0,
+                          method = 'CG',
+                          jac = True,
+                          tol = None,
+                          callback = None,
+                          options = {'maxiter' : 100})
+        
+        print result.x
+        print max_obj, result.fun
+        
+        return np.reshape(result.x, [1, -1]), result.fun
     
     def iterate(self, num_sample):
         M = self.M
@@ -306,3 +339,48 @@ class BSLBO:
         self.fitting()
         
         return next_x
+
+def test():
+    import matplotlib.pyplot as plt
+    
+#    fun = functions.brainin(10)
+    fun = functions.sinc_simple2()
+    #fun = functions.sinc_simple10()
+    #fun = functions.sinc_simple()
+    R = BSLBO(fun, 2, 10, 1, 0.5, 100, ACQ_FUN = 'UCB')
+    
+    for i in xrange(10):
+        data = R.data
+        
+    #    W = gp.fitted_params['mu'].transpose()
+        W = R.fitted_params['mu']
+        W = W[np.argmax(R.l_square), :].reshape([-1, R.D])
+        W = W.transpose()
+        
+    #    W = fun.W
+        WT = np.transpose(W)
+        WTW = np.matmul(WT, W)
+        B = np.transpose(np.linalg.solve(WTW, WT)) # D x K
+        D = fun.D
+        
+        fx_min, fx_max = find_enclosingbox(B, np.sqrt(D) * np.ones([D, 1]))
+        fx = np.linspace(fx_min, fx_max, num = 100).reshape([100, 1])
+        fy = fun.evaluate(Z_to_Xhat(fx, W))[1]
+        
+        mu, var, EI = R.test(Z_to_Xhat(fx, W))
+        
+        next_x = R.iterate(1000)
+        EI_scaled = preprocessing.MinMaxScaler((np.min(fy),np.max(fy))).fit_transform(EI.reshape([-1, 1]))
+        
+        plt.figure()
+        plt.plot(fx, fy)
+        plt.scatter(X_to_Z(data['X'], W), data['y'])
+        plt.plot(fx, mu, 'k')
+        plt.plot(fx, mu + np.sqrt(var), 'k:')
+        plt.plot(fx, mu - np.sqrt(var), 'k:')
+        plt.plot(fx, EI_scaled, '-.')
+        plt.scatter(X_to_Z(data['X'][-1], W), np.min(data['y']), marker = 'x', color = 'g')
+        plt.title('N is ' + str(len(data['y'])))
+        plt.show()
+        
+test()
