@@ -68,16 +68,13 @@ def log_barrier(x_star, A, b):
     return tf.reshape(tf.reduce_sum(tf.log(b - Ax) + tf.log(Ax + b), axis = 0), [-1, 1]) # FOR MAXIMIZATION L x 1
     
 class GP:
-    def __init__(self, D, LEARNING_RATE = 1e-1, ACQ_FUN = 'EI', SEARCH_METHOD = 'random'):
+    def __init__(self, D, K, LEARNING_RATE = 1e-1, ACQ_FUN = 'EI'):
         self.FLOATING_TYPE = settings.dtype
         self.JITTER_VALUE = settings.jitter
-        self.SEARCH_METHOD = SEARCH_METHOD
         self.ACQ_FUN = ACQ_FUN
         
         FLOATING_TYPE = self.FLOATING_TYPE
         JITTER_VALUE = self.JITTER_VALUE
-        
-        self.fitted_params = {'log_length' : None, 'log_sigma' : None, 'log_noise' : None}
         
         self.D = D
         
@@ -90,24 +87,24 @@ class GP:
             
             X = tf.placeholder(name = 'X', shape = [None, D], dtype = FLOATING_TYPE)
             y = tf.placeholder(name = 'y', shape = [None, 1], dtype = FLOATING_TYPE)
-            log_length = tf.get_variable(name = 'log_length', initializer = tf.random_normal_initializer(), shape = [], dtype = FLOATING_TYPE)
-            log_sigma = tf.get_variable(name = 'log_sigma', initializer = tf.random_normal_initializer(), shape = [], dtype = FLOATING_TYPE)
-            log_noise = tf.get_variable(name = 'log_noise', initializer = tf.random_normal_initializer(), shape = [], dtype = FLOATING_TYPE)
             
-            if SEARCH_METHOD is 'grad':
-                x_star = tf.get_variable(name = 'x_star', initializer = tf.random_normal_initializer(), shape = [None, D], dtype = FLOATING_TYPE)
-            elif SEARCH_METHOD is 'random':
-                x_star = tf.placeholder(name = 'x_star', shape = [None, D], dtype = FLOATING_TYPE)
+            self.inputs = {'X' : X, 'y' : y}
             
-            A = tf.placeholder(name = 'A', shape = [None, D], dtype = FLOATING_TYPE)
-            b = tf.placeholder(name = 'b', shape = [None, 1], dtype = FLOATING_TYPE)
-            t = tf.placeholder(name = 't', shape = [], dtype = FLOATING_TYPE)
+            log_length = tf.placeholder(name = 'log_length', shape = [], dtype = FLOATING_TYPE)
+            log_sigma = tf.placeholder(name = 'log_sigma', shape = [], dtype = FLOATING_TYPE)
+            log_noise = tf.placeholder(name = 'log_noise', shape = [], dtype = FLOATING_TYPE)
+            
+            self.params = {'log_length' : log_length, 'log_sigma' : log_sigma, 'log_noise' : log_noise}
+            
+            z_star = tf.placeholder(name = 'z_star', shape = [None, K], dtype = FLOATING_TYPE)
+            A = tf.placeholder(name = 'A', shape = [D, K], dtype = FLOATING_TYPE)
             max_fun = tf.placeholder(name = 'max_fun', shape = [], dtype = FLOATING_TYPE)
             beta = tf.placeholder(name = 'beta', shape = [], dtype = FLOATING_TYPE)
-            self.inputs = {'X' : X, 'y' : y}
-            self.params = {'log_length' : log_length, 'log_sigma' : log_sigma, 'log_noise' : log_noise}
-            self.acq_inputs = {'x_star' : x_star, 'A' : A, 'b' : b, 't' : t, 'max_fun' : max_fun, 'beta' : beta}
-                
+            
+            self.acq_inputs = {'z_star' : z_star, 'A' : A, 'max_fun' : max_fun, 'beta' : beta}
+            
+            x_star = tf.matmul(z_star, tf.transpose(A))
+            
             ####### TRANSFORMED VARIABLES #######
             
             length_sq = tf.exp(2 * log_length)
@@ -132,224 +129,25 @@ class GP:
             
             ####### FITTING TRAIN STEP #######
             
-            opt_fit = tf.train.AdamOptimizer(learning_rate = LEARNING_RATE)
-            
-            OBJ_fit = -F
-            
-            train_fit = opt_fit.minimize(OBJ_fit)
-            
             ####### OUTPUTS #######
             
-            self.outputs = {'F' : F, 'chol' : L, 'OBJ' : OBJ_fit , 'train_fit' : train_fit, 'F_acq' : F_acq, 'mu_star' : mu_star, 'var_star' : var_star}
+            self.train_f = -F
+            self.train_g = tf.stack(tf.gradients(self.train_f, [log_length, log_sigma, log_noise]), 0)
+            self.acq_f = F_acq
+            self.acq_g = tf.gradients(F_acq, z_star)
+            self.mu_star = mu_star
+            self.var_star = var_star
+            
+#            self.outputs = {'OBJ' : OBJ_fit, 'train_fit' : train_fit, 'F_acq' : F_acq, 'mu_star' : mu_star, 'var_star' : var_star}
             
             ####### FITTING TRAIN STEP #######
-            if SEARCH_METHOD is 'grad':
-                phi = log_barrier(x_star, A)
-                
-                OBJ_next = -(t * F_acq + phi)
-                
-                opt_next = tf.train.AdamOptimizer(learning_rate = LEARNING_RATE)
-                
-                train_next = opt_next.minimize(OBJ_next, var_list = [x_star])
-                
-                self.outputs['train_next'] = train_next
-            
-    def fitting(self, data, types, Iter = 500, init_method = 'fix'):
-        ####### INIT VALUES OF PARAMETERS #######        
-        X = data[types[0]]
-        y = data[types[1]]
-        
-        var_y = np.var(y)
-        
-        try:
-            init_value = {'log_sigma' : 0.5 * np.log(var_y), 'log_noise' : 0.5 * np.log(var_y / 100)}
-        except:
-            init_value = {'log_sigma' : 0.5 * np.log(var_y + 1), 'log_noise' : 0.5 * np.log((var_y + 1) / 100)}
-        
-        for key in init_value.keys():
-            self.fitted_params[key] = init_value[key]
-        
-        with tf.Session(graph=self.graph) as sess:
-            sess.run(tf.global_variables_initializer())
-            
-            if init_method is 'fix':
-                for key in init_value.keys():
-                    sess.run(self.params[key].assign(init_value[key]))
-            
-            feed_dict = {self.inputs['X'] : X,
-                         self.inputs['y'] : y}
-            
-            obj = sess.run(self.outputs['OBJ'], feed_dict)
-            
-            ####### TRAIN_STEP #######
-            
-            train_dict = {'train_fit' : self.outputs['train_fit'],
-                          'OBJ' : self.outputs['OBJ']}
-            
-            train_dict.update(self.params)
-            
-#            print('TRAIN_STEP')
-            
-            for i in xrange(Iter):
-                try:
-                    train_step = sess.run(train_dict, feed_dict)
-                    
-                    if train_step['OBJ'] < obj:
-                        obj = train_step['OBJ']
-                        for key in self.fitted_params.keys():
-                            self.fitted_params[key] = train_step[key]
-                    
-#                    if i % 100 is 0:
-#                        print i, train_step['OBJ']
-                        
-                except Exception as inst:
-                    print inst
-                    break
-        
-    def test(self, data, types, xx):
-        X = data[types[0]]
-        y = data[types[1]]
-        A = data['A']
-        max_fun = data[types[2]]
-        beta = data['beta']
-        x_star = np.reshape(xx, [-1, self.D])
-        
-        with tf.Session(graph=self.graph) as sess:
-            sess.run(tf.global_variables_initializer())
-            
-            feed_dict = {self.inputs['X'] : X, self.inputs['y'] : y, self.acq_inputs['A'] : A, self.acq_inputs['max_fun'] : max_fun, self.acq_inputs['beta'] : beta}
-            
-            for key in self.fitted_params.keys():
-                sess.run(self.params[key].assign(self.fitted_params[key]))
-            
-            if self.SEARCH_METHOD is 'grad':
-                sess.run(self.acq_inputs['x_star'].assign(x_star))
-            elif self.SEARCH_METHOD is 'random':
-                feed_dict[self.acq_inputs['x_star']] = x_star
-            
-            mu, var, F_acq = sess.run([self.outputs['mu_star'], self.outputs['var_star'], self.outputs['F_acq']], feed_dict)
-        
-        return [mu, var, F_acq]
-    
-    def finding_next(self, data, types, t0 = 10., gamma = 2., Iter_search = 10, Iter_outer = 10, Iter_inner = 100, Iter_random = 1000, N_burnin = 100):
-        X = data[types[0]]
-        y = data[types[1]]
-        A = data['A']
-        max_fun = data[types[2]]
-        beta = data['beta']
-        D = self.D
-        b = data['b']
-        
-        if self.SEARCH_METHOD is 'grad':
-            with tf.Session(graph=self.graph) as sess:
-                feed_dict = {self.inputs['X'] : X,
-                             self.inputs['y'] : y,
-                             self.acq_inputs['A'] : A,
-                             self.acq_inputs['b'] : b,
-                             self.acq_inputs['t'] : t0,
-                             self.acq_inputs['max_fun'] : max_fun,
-                             self.acq_inputs['beta'] : beta}
-                
-                x_init = self.x_init
-                x_list = hit_and_run(x_init, A, b, N_burnin, Iter_random)
-                self.x_init = np.reshape(x_list[-1], [1, D])
-                
-                np.random.shuffle(x_list)
-                
-                ## x_star INIT
-                x_star = x_list[Iter_search]
-                
-                ## OUTER t INIT
-                t = t0
-                feed_dict[self.inputs['t']] = t
-                
-                ###### INTERIOR POINT METHOD ######
-                
-                ## OUTER LOOP
-                for n_outer in xrange(Iter_outer):
-                    ## INITIALIZE
-                    sess.run(tf.global_variables_initializer())
-                
-                    ## FITTED PARAMS INIT
-                    for key in self.fitted_params.keys():
-                        sess.run(self.params[key].assign(self.fitted_params[key]))
-                        
-                    ## x_star assign
-                    sess.run(self.acq_inputs['x_star'].assign(x_star))
-                    
-                    ## INNER SEARCH
-                    #obj = sess.run(self.outputs['F_acq'], feed_dict = feed_dict)
-                    
-                    for n_inner in xrange(Iter_inner):
-                        sess.run(self.outputs['train_next'], feed_dict)
-                        #_, newobj = sess.run([self.outputs['train_next'], self.outputs['F_acq']], feed_dict)
-                        
-                        #if newobj > obj:
-                        #    obj = newobj
-                        #    x_star = sess.run(self.inputs['x_star'])
-                    
-                    x_star = sess.run(self.acq_inputs['x_star'])
-                    
-                    ## INCREASE t
-                    feed_dict[self.acq_inputs['t']] = t * gamma
-                    
-            obj = sess.run(self.outputs['F_acq'], feed_dict = feed_dict)
-            
-            return np.reshape(x_star[np.argmax(obj)], [1, D])
-        
-        elif self.SEARCH_METHOD is 'random':
-#            x_init = self.x_init
-#            x_star = hit_and_run(x_init, A, b, N_burnin, Iter_random)
-            x_star = sample_enclosingbox(A, b, Iter_random)
-
-            feed_dict = {self.inputs['X'] : X,
-                         self.inputs['y'] : y,
-                         self.acq_inputs['x_star'] : x_star,
-                         self.acq_inputs['max_fun'] : max_fun,
-                         self.acq_inputs['beta'] : beta}
-            
-            with tf.Session(graph=self.graph) as sess:
-                ## INITIALIZE
-                sess.run(tf.global_variables_initializer())
-                
-                ## FITTED PARAMS INIT
-                for key in self.fitted_params.keys():
-                    sess.run(self.params[key].assign(self.fitted_params[key]))
-                try:    
-                    obj = sess.run(self.outputs['F_acq'], feed_dict = feed_dict)
-                except Exception as inst:
-                    print inst
-                    
-#            self.x_init = np.reshape(x_star[-1], [-1, D])
-            
-            next_x = x_star[np.argmax(obj)]
-                    
-            return np.reshape(next_x, [1, D])
-        
-    def find_next(self, data, types, x_star):
-        X = data[types[0]]
-        y = data[types[1]]
-        max_fun = data[types[2]]
-        beta = data['beta']
-                
-        feed_dict = {self.inputs['X'] : X,
-                     self.inputs['y'] : y,
-                     self.acq_inputs['x_star'] : x_star,
-                     self.acq_inputs['max_fun'] : max_fun,
-                     self.acq_inputs['beta'] : beta}
-        
-        with tf.Session(graph=self.graph) as sess:
-            ## INITIALIZE
-            sess.run(tf.global_variables_initializer())
-            
-            ## FITTED PARAMS INIT
-            for key in self.fitted_params.keys():
-                sess.run(self.params[key].assign(self.fitted_params[key]))
-            try:    
-                obj = sess.run(self.outputs['F_acq'], feed_dict = feed_dict)
-            except Exception as inst:
-                print inst
-                
-#            self.x_init = np.reshape(x_star[-1], [-1, D])
-                
-        return np.argmax(obj), obj
+#            if SEARCH_METHOD is 'grad':
+#                phi = log_barrier(x_star, A)
+#                
+#                OBJ_next = -(t * F_acq + phi)
+#                
+#                opt_next = tf.train.AdamOptimizer(learning_rate = LEARNING_RATE)
+#                
+#                train_next = opt_next.minimize(OBJ_next, var_list = [x_star])
+#                
+#                self.outputs['train_next'] = train_next

@@ -12,7 +12,6 @@ import tensorflow as tf
 from sklearn import preprocessing, decomposition
 from scipy.optimize import minimize
 import settings
-import functions
 from util_func import X_to_Z, Z_to_Xhat
 from sampling import find_enclosingbox, sample_enclosingbox
 
@@ -124,7 +123,7 @@ class BSLBO:
         K = self.K
         param_dict = x_to_dict(x, M, K, D)
         
-        feed_dict = {self.gp.inputs['X'] : self.data['X'], self.gp.inputs['y'] : self.data['y']}
+        feed_dict = {self.gp.inputs['X'] : self.data[self.types[0]], self.gp.inputs['y'] : self.data[self.types[1]]}
         
         for param in param_dict.keys():
             feed_dict[self.gp.params[param]] = param_dict[param]
@@ -363,8 +362,8 @@ class BSLBO:
 
 def test():
     import matplotlib.pyplot as plt
-    
-#    fun = functions.brainin(10)
+    import functions
+    fun = functions.brainin(10)
     fun = functions.sinc_simple2()
     #fun = functions.sinc_simple10()
     #fun = functions.sinc_simple()
