@@ -89,8 +89,8 @@ class BSLBO:
         data['scaled_max_fun'] = np.array(1.0, dtype = settings.dtype)
         data['beta'] = fun.beta(data)
                 
-#        types = ['X', 'y_scaled', 'scaled_max_fun']
-        types = ['X', 'y', 'max_fun']
+        types = ['X', 'y_scaled', 'scaled_max_fun']
+#        types = ['X', 'y', 'max_fun']
         
 #        data['X'] = np.append(data['X'], data['X'][-1].reshape([1, -1]), axis = 0)
 #        data['y'] = np.append(data['y'], data['y'][-1].reshape([1, -1]), axis = 0)
@@ -110,6 +110,7 @@ class BSLBO:
         self.L = L
         self.Kr = Kr
         self.Max_M = Max_M
+        self.initiated = True
         
         gp = MHGP(K, D, ACQ_FUN = ACQ_FUN)
         
@@ -188,43 +189,91 @@ class BSLBO:
         
         return np.concatenate([init_value[param].reshape(-1) for param in ['Z', 'mu', 'log_Sigma', 'log_sigma_f', 'log_tau']])
         
-    def fitting(self, init_method = 'pca', method = 'L-BFGS-B', max_iter1 = 100, max_iter2 = 500):
+    def fitting(self, init_method = 'random', method = 'L-BFGS-B', max_iter1 = 100, max_iter2 = 100, fit_iter = 10):
         M = self.M
         D = self.D
         K = self.K
         
         train_step1 = ObjectiveWrapper(self.train_obj, 0)
         train_step2 = ObjectiveWrapper(self.train_obj, 1)
+            
+        if self.initiated is True:
+            prev_obj = np.finfo('float64').max
+            cond = True
+            
+            while(cond):
+                x0 = self.init_params(init_method = init_method)
+                
+                result = minimize(fun = train_step1,
+                                  x0 = x0,
+                                  method = method,
+                                  jac = True,
+                                  tol = None,
+                                  callback = None,
+                                  options = {'maxiter' : max_iter1})
+#                                  options = {'maxiter' : max_iter1, 'gtol' : np.finfo('float64').min})
+            
+                x0 = result.x
+        #        print x0[-2:-1]
+                
+                result = minimize(fun = train_step2,
+                                  x0 = x0,
+                                  method = method,
+                                  jac = True,
+                                  tol = None,
+                                  callback = None,
+                                  options = {'maxiter' : max_iter2})
+#                                  options = {'maxiter' : max_iter2, 'gtol' : np.finfo('float64').min})
+                                  #options = {'maxiter' : max_iter2, 'gtol' : np.finfo('float64').min})
+                
+                if result.fun < prev_obj:
+                    cond = False
+                    
+            self.fitted_params = x_to_dict(result.x, M, K, D)
+            self.initiated = False
+                
+        else:
+            feed_dict = {self.gp.inputs['X'] : self.data[self.types[0]], self.gp.inputs['y'] : self.data[self.types[1]]}
         
-        x0 = self.init_params(init_method = init_method)
-#        print x0[-2:-1]
-        
-        result = minimize(fun = train_step1,
-                          x0 = x0,
-                          method = method,
-                          jac = True,
-                          tol = None,
-                          callback = None,
-                          options = {'maxiter' : max_iter1, 'gtol' : np.finfo('float64').min})
-                          #options = {'maxiter' : max_iter1, 'gtol' : np.finfo('float64').min})
-    
-        x0 = result.x
-#        print x0[-2:-1]
-        
-        result = minimize(fun = train_step2,
-                          x0 = x0,
-                          method = method,
-                          jac = True,
-                          tol = None,
-                          callback = None,
-                          options = {'maxiter' : max_iter2, 'gtol' : np.finfo('float64').min})
-                          #options = {'maxiter' : max_iter2, 'gtol' : np.finfo('float64').min})
+            for param in self.fitted_params.keys():
+                feed_dict[self.gp.params[param]] = self.fitted_params[param]
+            
+            prev_obj = self.session.run(self.gp.train_f, feed_dict)
+            
+            print prev_obj
+            
+            for n in xrange(fit_iter):
+                x0 = self.init_params(init_method = init_method)
+                    
+                result = minimize(fun = train_step1,
+                                  x0 = x0,
+                                  method = method,
+                                  jac = True,
+                                  tol = None,
+                                  callback = None,
+                                  options = {'maxiter' : max_iter1})
+                                  #options = {'maxiter' : max_iter1, 'gtol' : np.finfo('float64').min})
+            
+                x0 = result.x
+        #        print x0[-2:-1]
+                
+                result = minimize(fun = train_step2,
+                                  x0 = x0,
+                                  method = method,
+                                  jac = True,
+                                  tol = None,
+                                  callback = None,
+                                  options = {'maxiter' : max_iter2})
+                
+                if result.fun < prev_obj:
+                    self.fitted_params = x_to_dict(result.x, M, K, D)
+                    prev_obj = result.fun
+            
+        print prev_obj
         
         self.train_result = result
         
-        self.fitted_params = x_to_dict(result.x, M, K, D)
-        
-        feed_dict = {self.gp.inputs['X'] : self.data['X'], self.gp.inputs['y'] : self.data['y']}
+        feed_dict = {self.gp.inputs['X'] : self.data[self.types[0]], self.gp.inputs['y'] : self.data[self.types[1]]}
         
         for param in self.fitted_params.keys():
             feed_dict[self.gp.params[param]] = self.fitted_params[param]
@@ -367,9 +416,9 @@ def test():
     fun = functions.sinc_simple2()
     #fun = functions.sinc_simple10()
     #fun = functions.sinc_simple()
-    R = BSLBO(fun, 2, 10, 1, 0.5, 100, ACQ_FUN = 'EI')
+    R = BSLBO(fun, 2, 10, 1, 0.5, 100, ACQ_FUN = 'UCB')
     
-    for i in xrange(3):
+    for i in xrange(10):
         data = R.data
         
     #    W = gp.fitted_params['mu'].transpose()
@@ -406,7 +455,7 @@ def test():
     
     return R
         
-R = test()
+#R = test()
 
 #import matplotlib.pyplot as plt
 #for i in np.linspace(-5,5) :

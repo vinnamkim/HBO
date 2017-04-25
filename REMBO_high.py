@@ -321,7 +321,7 @@ def test():
     
     return R
         
-R = test()
+#R = test()
 #
 #for i in xrange(10):
 #    data = R.data
