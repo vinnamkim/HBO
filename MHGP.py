@@ -164,11 +164,14 @@ class MHGP:
             
             ####### ACQUISITION FUNCTION INPUS #######
             
-            x_star = tf.placeholder(name = 'x_star', shape = [None, D], dtype = FLOATING_TYPE)
+            z_star = tf.placeholder(name = 'z_star', shape = [None, None], dtype = FLOATING_TYPE)
+            A = tf.placeholder(name = 'A', shape = [D, None], dtype = FLOATING_TYPE)
             max_fun = tf.placeholder(name = 'max_fun', shape = [], dtype = FLOATING_TYPE)
             beta = tf.placeholder(name = 'beta', shape = [], dtype = FLOATING_TYPE)
             
-            self.acq_inputs = {'x_star' : x_star, 'max_fun' : max_fun, 'beta' : beta}
+            self.acq_inputs = {'z_star' : z_star, 'A' : A, 'max_fun' : max_fun, 'beta' : beta}
+            
+            x_star = tf.matmul(z_star, tf.transpose(A))
             
             ####### x_star DISTRIBUTION #######
             
@@ -309,7 +312,7 @@ class MHGP:
             self.mu_star = mu_star
             self.var_star = var_star
             self.acq_f = F_acq
-            self.acq_g = tf.gradients(F_acq, x_star)
+            self.acq_g = tf.gradients(F_acq, z_star)
             self.init = tf.global_variables_initializer()
         
 #            self.debugs = locals()

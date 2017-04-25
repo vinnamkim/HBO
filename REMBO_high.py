@@ -11,8 +11,6 @@ import numpy as np
 #import matplotlib.pyplot as plt
 from sklearn import preprocessing
 import settings
-import functions
-from util_func import X_to_Z, Z_to_Xhat
 
 class REMBO:
     def __init__(self, fun, K, N, ACQ_FUN, SEARCH_METHOD, iter_fit):
@@ -90,6 +88,49 @@ class REMBO:
         return next_x
 #        
 #
+
+def test():
+    import functions
+    from util_func import X_to_Z, Z_to_Xhat
+    from sampling import find_enclosingbox, sample_enclosingbox
+    import matplotlib.pyplot as plt
+    
+#    fun = functions.brainin(10)
+    fun = functions.sinc_simple2()
+    #fun = functions.sinc_simple10()
+    #fun = functions.sinc_simple()
+    R = REMBO(fun, 1, 10, ACQ_FUN = 'EI', SEARCH_METHOD = 'random', iter_fit = 500)
+    
+    for i in xrange(3):
+        data = R.data
+        gp = R.gp
+        W = R.W
+    
+        fx = np.linspace(-np.sqrt(R.D),np.sqrt(R.D), 100).reshape([-1, 1])
+        fx_high = np.matmul(W, fx.transpose()).transpose()
+        fy = fun.evaluate(fx_high)[1]
+    
+        mu, var, EI = gp.test(data, R.types, fx_high)
+        
+        EI_scaled = preprocessing.MinMaxScaler((np.min(fy),np.max(fy))).fit_transform(EI.reshape([-1, 1]))
+                                              
+        next_x = R.iterate(500, 10000)
+        
+        plt.figure()
+        plt.plot(fx, fy)
+        plt.scatter(data['Z'], data['y'])    
+        plt.plot(fx, EI_scaled, '-.')
+        plt.plot(fx, mu, 'k')
+        plt.plot(fx, mu + np.sqrt(var), 'k:')
+        plt.plot(fx, mu - np.sqrt(var), 'k:')
+        plt.scatter(data['Z'][-1], np.min(data['y']), marker = 'x', color = 'g')
+        plt.title('N is ' + str(len(data['y'])))
+        plt.show()
+    
+    return R
+        
+R = test()
+#
 #for i in xrange(10):
 #    data = R.data
 #    gp = R.gp
@@ -115,7 +156,7 @@ class REMBO:
 #    plt.scatter(data['Z'][-1], np.min(data['y']), marker = 'x', color = 'g')
 #    plt.title('N is ' + str(len(data['y'])))
 #    plt.show()
-        
+#        
 #
 #
 #R.iterate(500, 10000)

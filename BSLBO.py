@@ -43,6 +43,23 @@ class ObjectiveWrapper(object):
             print("Warning: inf or nan in gradient: replacing with zeros")
             return f, np.where(g_is_fin, g, 0.)
 
+class ObjectiveWrapper1(object):
+    def __init__(self, objective, A):
+        self._objective = objective
+        self._A = A
+        self._previous_x = None
+
+    def __call__(self, x):
+        f, g = self._objective(x, self._A)
+        g_is_fin = np.isfinite(g)
+        
+        if np.all(g_is_fin):
+            self._previous_x = x  # store the last known good value
+            return f, g
+        else:
+            print("Warning: inf or nan in gradient: replacing with zeros")
+            return f, np.where(g_is_fin, g, 0.)
+
 def x_to_dict(x, M, K, D):
     result = {}
     result['Z'] = x[:(M * K)].reshape([M, K])
@@ -75,6 +92,9 @@ class BSLBO:
                 
 #        types = ['X', 'y_scaled', 'scaled_max_fun']
         types = ['X', 'y', 'max_fun']
+        
+#        data['X'] = np.append(data['X'], data['X'][-1].reshape([1, -1]), axis = 0)
+#        data['y'] = np.append(data['y'], data['y'][-1].reshape([1, -1]), axis = 0)
         
         M = min(Max_M, N)
         
@@ -113,10 +133,11 @@ class BSLBO:
         
         return f, g
         
-    def acq_obj(self, x_star):
+    def acq_obj(self, z_star, A):
         feed_dict = {self.gp.inputs['X'] : self.data[self.types[0]],
                      self.gp.inputs['y'] : self.data[self.types[1]],
-                     self.gp.acq_inputs['x_star'] : np.reshape(x_star, [1, -1]),
+                     self.gp.acq_inputs['z_star'] : np.reshape(z_star, [1, -1]),
+                     self.gp.acq_inputs['A'] : A,
                      self.gp.acq_inputs['max_fun'] : self.data[self.types[2]],
                      self.gp.acq_inputs['beta'] : self.data['beta']}
         
@@ -168,7 +189,7 @@ class BSLBO:
         
         return np.concatenate([init_value[param].reshape(-1) for param in ['Z', 'mu', 'log_Sigma', 'log_sigma_f', 'log_tau']])
         
-    def fitting(self, init_method = 'pca', method = 'CG', max_iter1 = 100, max_iter2 = 500):
+    def fitting(self, init_method = 'pca', method = 'L-BFGS-B', max_iter1 = 100, max_iter2 = 500):
         M = self.M
         D = self.D
         K = self.K
@@ -211,20 +232,21 @@ class BSLBO:
             
         self.l_square = self.session.run(self.gp.l_square, feed_dict)
         
-    def test(self, x_star):
+    def test(self, A, z_star):
         X = self.data[self.types[0]]
         y = self.data[self.types[1]]
         max_fun = self.data[self.types[2]]
         beta = self.data['beta']
         
-        try:
-            if x_star.shape[1] is not self.D:
-                print 'Dimension error'
-                return None
-        except:
-            print 'Dimension error'
+#        try:
+#            if x_star.shape[1] is not self.D:
+#                print 'Dimension error'
+#                return None
+#        except:
+#            print 'Dimension error'
         
-        feed_dict = {self.gp.inputs['X'] : X, self.gp.inputs['y'] : y, self.gp.acq_inputs['x_star'] : x_star, self.gp.acq_inputs['max_fun'] : max_fun, self.gp.acq_inputs['beta'] : beta}
+        feed_dict = {self.gp.inputs['X'] : X, self.gp.inputs['y'] : y, self.gp.acq_inputs['z_star'] : z_star, self.gp.acq_inputs['A'] : A,
+                     self.gp.acq_inputs['max_fun'] : max_fun, self.gp.acq_inputs['beta'] : beta}
         
         for param in self.fitted_params.keys():
             feed_dict[self.gp.params[param]] = self.fitted_params[param]
@@ -240,17 +262,17 @@ class BSLBO:
         beta = self.data['beta']
         
         max_obj = np.finfo(self.FLOATING_TYPE).min
-        x_next = sample_enclosingbox(A, b, 1)
         
         for n in xrange(10):
             try:
                 z_star = sample_enclosingbox(A, b, num_sample / 10)
                 
-                x_star = np.matmul(z_star, A.transpose())
+#                x_star = np.matmul(z_star, A.transpose())
                 
                 feed_dict = {self.gp.inputs['X'] : X,
                              self.gp.inputs['y'] : y,
-                             self.gp.acq_inputs['x_star'] : x_star,
+                             self.gp.acq_inputs['z_star'] : z_star,
+                             self.gp.acq_inputs['A'] : A,
                              self.gp.acq_inputs['max_fun'] : max_fun,
                              self.gp.acq_inputs['beta'] : beta}
                 
@@ -262,31 +284,30 @@ class BSLBO:
                 temp = np.max(obj)
                 
                 if temp > max_obj:
-                    x_next = x_star[np.argmax(obj)]
+                    z_next = z_star[np.argmax(obj)]
                     max_obj = temp
             except:
                 print 'LLT error'
                 continue
             
-        x0 = x_next + 1
-        print x0
-#        print obj
-        acq_step = ObjectiveWrapper(self.acq_obj, 1)
+        x0 = z_next
+#        print x0
+        acq_step = ObjectiveWrapper1(self.acq_obj, A)
         
 #        print acq_step(x0)
         
         result = minimize(fun = acq_step,
                           x0 = x0,
-                          method = 'CG',
+                          method = 'L-BFGS-B',
                           jac = True,
                           tol = None,
                           callback = None,
                           options = {'maxiter' : 100})
         
-        print result.x
-        print max_obj, result.fun
+#        print result.x
+#        print max_obj, np.negative(result.fun)
         
-        return np.reshape(result.x, [1, -1]), result.fun
+        return np.reshape(np.matmul(np.reshape(result.x, [1, -1]), A.transpose()), [1, -1]), result.fun
     
     def iterate(self, num_sample):
         M = self.M
@@ -347,9 +368,9 @@ def test():
     fun = functions.sinc_simple2()
     #fun = functions.sinc_simple10()
     #fun = functions.sinc_simple()
-    R = BSLBO(fun, 2, 10, 1, 0.5, 100, ACQ_FUN = 'UCB')
+    R = BSLBO(fun, 2, 10, 1, 0.5, 100, ACQ_FUN = 'EI')
     
-    for i in xrange(10):
+    for i in xrange(3):
         data = R.data
         
     #    W = gp.fitted_params['mu'].transpose()
@@ -367,7 +388,7 @@ def test():
         fx = np.linspace(fx_min, fx_max, num = 100).reshape([100, 1])
         fy = fun.evaluate(Z_to_Xhat(fx, W))[1]
         
-        mu, var, EI = R.test(Z_to_Xhat(fx, W))
+        mu, var, EI = R.test(B, fx)
         
         next_x = R.iterate(1000)
         EI_scaled = preprocessing.MinMaxScaler((np.min(fy),np.max(fy))).fit_transform(EI.reshape([-1, 1]))
@@ -379,8 +400,16 @@ def test():
         plt.plot(fx, mu + np.sqrt(var), 'k:')
         plt.plot(fx, mu - np.sqrt(var), 'k:')
         plt.plot(fx, EI_scaled, '-.')
+#        print X_to_Z(data['X'][-1], W)
         plt.scatter(X_to_Z(data['X'][-1], W), np.min(data['y']), marker = 'x', color = 'g')
         plt.title('N is ' + str(len(data['y'])))
         plt.show()
+    
+    return R
         
-test()
+R = test()
+
+#import matplotlib.pyplot as plt
+#for i in np.linspace(-5,5) :
+#    plt.scatter(i, R.acq_obj(i, B)[0], color = 'k')
+#    plt.scatter(i, R.acq_obj(i, B)[1], color = 'b')
