@@ -286,7 +286,7 @@ def test():
     import matplotlib.pyplot as plt
     
 #    fun = functions.brainin(10)
-    fun = functions.sinc_simple2()
+#    fun = functions.sinc_simple2()
     #fun = functions.sinc_simple10()
     #fun = functions.sinc_simple()
     R = REMBO(fun, 1, 10, ACQ_FUN = 'EI', iter_fit = 500)

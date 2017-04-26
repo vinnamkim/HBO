@@ -189,7 +189,7 @@ class BSLBO:
         
         return np.concatenate([init_value[param].reshape(-1) for param in ['Z', 'mu', 'log_Sigma', 'log_sigma_f', 'log_tau']])
         
-    def fitting(self, init_method = 'random', method = 'L-BFGS-B', max_iter1 = 100, max_iter2 = 100, fit_iter = 10):
+    def fitting(self, init_method = 'pca', method = 'L-BFGS-B', max_iter1 = 100, max_iter2 = 400, fit_iter = 1):
         M = self.M
         D = self.D
         K = self.K
@@ -240,7 +240,7 @@ class BSLBO:
             
             prev_obj = self.session.run(self.gp.train_f, feed_dict)
             
-            print prev_obj
+#            print prev_obj
             
             for n in xrange(fit_iter):
                 x0 = self.init_params(init_method = init_method)
@@ -269,7 +269,7 @@ class BSLBO:
                     self.fitted_params = x_to_dict(result.x, M, K, D)
                     prev_obj = result.fun
             
-        print prev_obj
+#        print prev_obj
         
         self.train_result = result
         
@@ -337,7 +337,7 @@ class BSLBO:
             except:
                 print 'LLT error'
                 continue
-            
+        self.acq_random = max_obj
         x0 = z_next
 #        print x0
         acq_step = ObjectiveWrapper1(self.acq_obj, A)
@@ -346,7 +346,7 @@ class BSLBO:
         
         result = minimize(fun = acq_step,
                           x0 = x0,
-                          method = 'L-BFGS-B',
+                          method = 'CG',
                           jac = True,
                           tol = None,
                           callback = None,
@@ -354,7 +354,9 @@ class BSLBO:
         
 #        print result.x
 #        print max_obj, np.negative(result.fun)
-        
+#        print 'Maximized'        
+#        print -result.fun
+        self.acq_result = result
         return np.reshape(np.matmul(np.reshape(result.x, [1, -1]), A.transpose()), [1, -1]), result.fun
     
     def iterate(self, num_sample):
@@ -413,12 +415,12 @@ def test():
     import matplotlib.pyplot as plt
     import functions
     fun = functions.brainin(10)
-    fun = functions.sinc_simple2()
+#    fun = functions.sinc_simple2()
     #fun = functions.sinc_simple10()
     #fun = functions.sinc_simple()
     R = BSLBO(fun, 2, 10, 1, 0.5, 100, ACQ_FUN = 'UCB')
     
-    for i in xrange(10):
+    for i in xrange(100):
         data = R.data
         
     #    W = gp.fitted_params['mu'].transpose()
@@ -439,23 +441,29 @@ def test():
         mu, var, EI = R.test(B, fx)
         
         next_x = R.iterate(1000)
-        EI_scaled = preprocessing.MinMaxScaler((np.min(fy),np.max(fy))).fit_transform(EI.reshape([-1, 1]))
+        EI_scaled = preprocessing.MinMaxScaler((np.min(-1.),np.max(1.))).fit_transform(EI.reshape([-1, 1]))
+        fy_scaled = preprocessing.MinMaxScaler((np.min(-1.),np.max(1.))).fit_transform(fy.reshape([-1, 1]))
+        y_scaled = preprocessing.MinMaxScaler((np.min(-1.),np.max(1.))).fit_transform(data['y'].reshape([-1, 1]))
         
         plt.figure()
-        plt.plot(fx, fy)
-        plt.scatter(X_to_Z(data['X'], W), data['y'])
+        plt.plot(fx, fy_scaled)
+        plt.scatter(X_to_Z(data['X'], W), y_scaled)
         plt.plot(fx, mu, 'k')
         plt.plot(fx, mu + np.sqrt(var), 'k:')
         plt.plot(fx, mu - np.sqrt(var), 'k:')
         plt.plot(fx, EI_scaled, '-.')
 #        print X_to_Z(data['X'][-1], W)
-        plt.scatter(X_to_Z(data['X'][-1], W), np.min(data['y']), marker = 'x', color = 'g')
+        plt.scatter(X_to_Z(data['X'][-1], W), -1., marker = 'x', color = 'g')
         plt.title('N is ' + str(len(data['y'])))
         plt.show()
+        print 'EI'
+        print -R.acq_random
+        print -R.acq_result.fun
+        print np.max(EI)
     
     return R
         
-#R = test()
+R = test()
 
 #import matplotlib.pyplot as plt
 #for i in np.linspace(-5,5) :
