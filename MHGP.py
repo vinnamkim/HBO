@@ -27,6 +27,8 @@ class MHGP:
     def __init__(self, K, D, KL_TYPE = 'ML2', LEARNING_RATE = 1e-1, ACQ_FUN = 'EI'):
         FLOATING_TYPE = settings.dtype
         JITTER_VALUE = settings.jitter
+        #D = 10
+        #K = 5
         
         self.FLOATING_TYPE = FLOATING_TYPE
         self.JITTER_VALUE = JITTER_VALUE
@@ -305,6 +307,33 @@ class MHGP:
 #                            'mu_star' : mu_star,
 #                            'var_star' : var_star,
 #                            'F_acq' : F_acq}
+            # Z : M x K, W : K x D
+            # x_star : L x D
+            # k_fstar_u : L x M
+            
+            
+            W_dist = tf.contrib.distributions.Normal(mu = mu, sigma = tf.exp(log_Sigma))
+            
+            W = W_dist.sample()
+            
+            Wx_star = tf.matmul(x_star, tf.transpose(W)) # L x K
+            Wx_star_sq = tf.reshape(tf.reduce_sum(tf.square(Wx_star), axis = 1), [-1, 1]) # L x 1
+            Z_sq = tf.transpose(r) # 1 x M
+            
+            k_fstar_u = tf.exp(-0.5 * (Wx_star_sq - 2 * tf.matmul(Wx_star, tf.transpose(Z)) + Z_sq)) # L x M
+            k_fstar_uInvLm = tf.matrix_triangular_solve(Lm, tf.transpose(k_fstar_u)) # M x L
+            k_fstar_uInvLmInvLa = tf.matrix_triangular_solve(La, k_fstar_uInvLm) # M x L
+            
+            mu_W = tf.squeeze(tf.matmul(sigma_f_sq * tf.transpose(k_fstar_uInvLmInvLa), tf.transpose(YPsi1InvLmInvLa)), axis = 1) # L x 1
+            
+            var_W = sigma_f_sq - sigma_f_sq * tf.reduce_sum(tf.square(tf.transpose(k_fstar_uInvLm)), axis = 1) \
+            - sigma_f_sq * tau_sq * tf.reduce_sum(tf.square(tf.transpose(k_fstar_uInvLmInvLa)), axis = 1) + tau_sq
+            
+            x_star_dist = tf.contrib.distributions.Normal(mu = mu_W, sigma = tf.sqrt(var_W))
+            
+            x_star_entropy = x_star_dist.entropy()
+            
+            
             
             self.train_f = OBJ_train
             self.train_g = tf.concat([tf.reshape(g, [-1]) for g in tf.gradients(OBJ_train, [Z, mu, log_Sigma, log_sigma_f, log_tau])], 0)
