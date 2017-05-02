@@ -418,9 +418,9 @@ def test():
 #    fun = functions.sinc_simple2()
     #fun = functions.sinc_simple10()
     #fun = functions.sinc_simple()
-    R = BSLBO(fun, 2, 10, 1, 0.5, 100, ACQ_FUN = 'UCB')
+    R = BSLBO(fun, 2, 10, 1, 0.9, 100, ACQ_FUN = 'EI')
     
-    for i in xrange(100):
+    for i in xrange(10):
         data = R.data
         
     #    W = gp.fitted_params['mu'].transpose()
