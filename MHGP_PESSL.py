@@ -157,12 +157,12 @@ class MHGP:
             ####### TRAINING STEP #######
             
             OBJ_train = - (F - KL)
-    
-#            opt = tf.train.AdamOptimizer(learning_rate = LEARNING_RATE)
-#    
-#            train_op1 = opt.minimize(OBJ_train, var_list = [Z, mu, log_Sigma])
-#    
-#            train_op2 = opt.minimize(OBJ_train)
+            
+            self.train_f = OBJ_train
+            self.train_g = tf.concat([tf.reshape(g, [-1]) for g in tf.gradients(OBJ_train, [Z, mu, log_Sigma, log_sigma_f, log_tau])], 0)
+            self.l_square = l_square
+            self.init = tf.global_variables_initializer()
+            
             
             ####### ACQUISITION FUNCTION INPUS #######
             
@@ -171,9 +171,7 @@ class MHGP:
             max_fun = tf.placeholder(name = 'max_fun', shape = [], dtype = FLOATING_TYPE)
             beta = tf.placeholder(name = 'beta', shape = [], dtype = FLOATING_TYPE)
             
-            self.acq_inputs = {'z_star' : z_star, 'A' : A, 'max_fun' : max_fun, 'beta' : beta}
-            
-            x_star = tf.matmul(z_star, tf.transpose(A))
+            x_star = tf.placeholder(dtype = FLOATING_TYPE, shape = [None, D])
             
             ####### x_star DISTRIBUTION #######
             
@@ -201,38 +199,8 @@ class MHGP:
             
             Psi2_star = tf.transpose(tf.reshape(tf.transpose(Psi2_star1, [0, 2, 1]), [-1, M])) # M x (L x M)
             
-#            LmInv = tf.matrix_triangular_solve(Lm, I_M)
-#            LaInv = tf.matrix_triangular_solve(La, I_M)
-#            LaInvLmInv = tf.matmul(LaInv, LmInv)
-#            
-#            K_uu_Inv = tf.matmul(tf.transpose(LmInv), LmInv)
-#            
-#            A_Inv = tf.matmul(tf.transpose(LaInvLmInv), LaInvLmInv)
-            
-#            test_AA = tf.matmul(A_Inv, tf.matmul(Lm, tf.transpose(tf.matmul(Lm, A))))
-#            test_BB = tf.matmul(tf.matrix_triangular_solve(tf.matmul(Lm, La), tf.transpose(Psi1)), y)
-#            Alpha = tf.matrix_triangular_solve(tf.transpose(La), tf.matrix_triangular_solve(tf.transpose(Lm), tf.transpose(YPsi1InvLmInvLa), lower = False), lower = False)
-#            Alpha = tf.matmul(tf.matmul(A_Inv, tf.transpose(Psi1)), y)
-            # M x 1
-
-            #1
-#            Psi2_starInvLm = tf.matrix_triangular_solve(Lm, Psi2_star)
-#            
-#            var_star1 = tf.matrix_triangular_solve(La, Psi2_starInvLm)
-#            
-#            var_star1 = tf.transpose(tf.reshape(tf.transpose(var_star1), [-1, M, M]), [0, 2, 1])
-#            
-#            var_star1 = tf.transpose(tf.reshape(var_star1, [-1, M]))
-#            
-#            var_star1 = tf.matrix_triangular_solve(La, tf.matrix_triangular_solve(Lm, var_star1))
-#            
-#            var_star1 = tf.transpose(tf.reshape(tf.transpose(var_star1), [-1, M, M]), [0, 2, 1])
-#            
-#            var_star1 = sigma_f_sq * tf.trace(var_star1)
-#            
-#            var_star11 = tf.trace(tf.reshape(tf.transpose(tf.matmul(sigma_f_sq * A_Inv, Psi2_star)), [-1, M, M]))
-#            
             ########################
+            
             Psi2_starInvLm = tf.matrix_triangular_solve(Lm, Psi2_star)
             
             Psi2_starInvLm = tf.transpose(tf.reshape(tf.transpose(Psi2_starInvLm), [-1, M, M]), [0, 2, 1])
@@ -252,65 +220,14 @@ class MHGP:
             
             var_star1 = sigma_f_sq * tf.trace(InvLaInvLmPsi2_starInvLmLa)
             
-#            var_star11 = tf.trace(tf.reshape(tf.transpose(tf.matmul(sigma_f_sq * A_Inv, Psi2_star)), [-1, M, M]))
-            ####################
-            
-            #2
             var_star2 = sigma_f_sq * tf.trace(InvLmPsi2_starInvLm)
             
-#            var_star22 = tf.trace(tf.reshape(tf.transpose(tf.matmul(sigma_f_sq * K_uu_Inv, Psi2_star)), [-1, M, M]))
-            
-            #3
             var_star3 = tf.square(sigma_f_sq) * tf.squeeze(tf.matmul(YPsi1InvLmInvLa, tf.transpose(tf.reshape(tf.matmul(YPsi1InvLmInvLa, tf.transpose(tf.reshape(InvLaInvLmPsi2_starInvLmLa, [-1, M]))), [-1, M]))))
-            
-#            var_star33 = tf.squeeze(tf.matmul(tf.reshape(tf.matmul(tf.transpose(sigma_f_sq * Alpha), Psi2_star), [-1, M]), sigma_f_sq * Alpha))
             
             var_star =  tau_sq * var_star1 - var_star2 + var_star3 + sigma_f_sq * tf.ones_like(mu_star) - tf.square(mu_star)
             
             F_acq = acq_fun(mu_star, var_star, max_fun, beta, method = ACQ_FUN)
             
-#            ####### ACQUISITION FUNCTION INPUS #######
-#            
-#            z_star = tf.placeholder(name = 'z_star', shape = [None, K], dtype = FLOATING_TYPE)
-#            max_fun = tf.placeholder(name = 'max_fun', shape = [], dtype = FLOATING_TYPE)
-#            beta = tf.placeholder(name = 'beta', shape = [], dtype = FLOATING_TYPE)
-#            
-#            self.acq_inputs = {'z_star' : z_star, 'max_fun' : max_fun, 'beta' : beta}
-#            
-#            ####### z_star DISTRIBUTION #######
-#            
-#            zz_star = tf.expand_dims(z_star, 1)  # z_star : L x K -> L x 1 x K
-#            
-#            sigma_f = tf.exp(log_sigma_f)
-#            
-#            k_ustar_u = tf.exp(-0.5 * tf.reduce_sum(tf.square(Z - zz_star), axis = -1)) # L x M
-#            
-#            k_ustar_uInvLm = tf.matrix_triangular_solve(Lm, tf.transpose(k_ustar_u)) # M x L
-#            
-#            k_ustar_uInvLmInvLa = tf.matrix_triangular_solve(La, k_ustar_uInvLm) # M x L
-#            
-#            mu_star = tf.squeeze(sigma_f * tf.matmul(tf.transpose(k_ustar_uInvLmInvLa), tf.transpose(YPsi1InvLmInvLa))) # L x 1
-#            
-#            var_star = tf.ones_like(mu_star, dtype = FLOATING_TYPE) - tf.reduce_sum(tf.transpose(tf.square(k_ustar_uInvLm)), axis = -1) + \
-#            tau_sq * tf.reduce_sum(tf.transpose(tf.square(k_ustar_uInvLmInvLa)), axis = -1)
-#            
-#            F_acq = acq_fun(mu_star, var_star, max_fun, beta, method = ACQ_FUN)
-            
-            ####### OUTPUTS #######
-            
-#            self.outputs = {'F' : F,
-#                            'KL' : KL,
-#                            'OBJ' : OBJ_train,
-#                            'l_square': l_square,
-#                            'train_op1' : train_op1,
-#                            'train_op2' : train_op2,
-#                            'mu_star' : mu_star,
-#                            'var_star' : var_star,
-#                            'F_acq' : F_acq}
-            # Z : M x K, W : K x D
-            # x_star : L x D
-            # k_fstar_u : L x M
-
             self.train_f = OBJ_train
             self.train_g = tf.concat([tf.reshape(g, [-1]) for g in tf.gradients(OBJ_train, [Z, mu, log_Sigma, log_sigma_f, log_tau])], 0)
             self.l_square = l_square
@@ -319,8 +236,66 @@ class MHGP:
             self.acq_f = F_acq
             self.acq_g = tf.gradients(F_acq, z_star)
             self.init = tf.global_variables_initializer()
-        
-#            self.debugs = locals()
+            
+            #########################
+            
+            W_dist = tf.contrib.distributions.Normal(mu = mu, sigma = tf.exp(log_Sigma))
+            
+            W = W_dist.sample()
+            
+            Wx_star = tf.matmul(x_star, tf.transpose(W)) # L x K
+            Wx_star_sq = tf.reshape(tf.reduce_sum(tf.square(Wx_star), axis = 1), [-1, 1]) # L x 1
+            Z_sq = tf.transpose(r) # 1 x M
+            
+            k_fstar_u = tf.exp(-0.5 * (Wx_star_sq - 2 * tf.matmul(Wx_star, tf.transpose(Z)) + Z_sq)) # L x M
+            k_fstar_uInvLm = tf.matrix_triangular_solve(Lm, tf.transpose(k_fstar_u)) # M x L
+            k_fstar_uInvLmInvLa = tf.matrix_triangular_solve(La, k_fstar_uInvLm) # M x L
+            
+            mu_W = tf.squeeze(tf.matmul(sigma_f_sq * tf.transpose(k_fstar_uInvLmInvLa), tf.transpose(YPsi1InvLmInvLa)), axis = 1) # L x 1
+            
+            var_W = sigma_f_sq - sigma_f_sq * tf.reduce_sum(tf.square(tf.transpose(k_fstar_uInvLm)), axis = 1) \
+            + sigma_f_sq * tau_sq * tf.reduce_sum(tf.square(tf.transpose(k_fstar_uInvLmInvLa)), axis = 1) + tau_sq
+            
+            y_star_dist = tf.contrib.distributions.Normal(mu = mu_W, sigma = tf.sqrt(var_W))
+            
+            y_star_entropy = y_star_dist.entropy() # Monte carlo for 2 entropy term
+            
+            self.x_star = x_star
+            self.y_star_entropy = y_star_entropy
+            
+            Wx_star = tf.matmul(x_star, tf.transpose(mu)) # L x K
+            Wx_star_sq = tf.reshape(tf.reduce_sum(tf.square(Wx_star), axis = 1), [-1, 1]) # L x 1
+            Z_sq = tf.transpose(r) # 1 x M
+            
+            k_fstar_u = tf.exp(-0.5 * (Wx_star_sq - 2 * tf.matmul(Wx_star, tf.transpose(Z)) + Z_sq)) # L x M
+            k_fstar_uInvLm = tf.matrix_triangular_solve(Lm, tf.transpose(k_fstar_u)) # M x L
+            k_fstar_uInvLmInvLa = tf.matrix_triangular_solve(La, k_fstar_uInvLm) # M x L
+            
+            mu_W = tf.squeeze(tf.matmul(sigma_f_sq * tf.transpose(k_fstar_uInvLmInvLa), tf.transpose(YPsi1InvLmInvLa)), axis = 1) # L x 1
+            
+            var_W = sigma_f_sq - sigma_f_sq * tf.reduce_sum(tf.square(tf.transpose(k_fstar_uInvLm)), axis = 1) \
+            + sigma_f_sq * tau_sq * tf.reduce_sum(tf.square(tf.transpose(k_fstar_uInvLmInvLa)), axis = 1) + tau_sq
+            
+            y_star_dist = tf.contrib.distributions.Normal(mu = mu_W, sigma = tf.sqrt(var_W))
+            
+            self.y_star_entropy_ML = y_star_dist.entropy()
+            self.mu_W = mu_W
+            self.var_W = var_W
+            
+            # Monte carlo for 2 entropy term
+                       
+#            n_y_star = tf.placeholder('int32', shape = [])
+#            
+#            y_star_sample = y_star_dist.sample(n_y_star) # n_y_star x L
+#            
+#            y_star = tf.placeholder(dtype = FLOATING_TYPE, shape = [None, None]) # n_y_star x L
+#            
+#            y_star_pdf = y_star_dist.pdf(y_star) # n_y_star x L
+            
+            #self.n_y_star = n_y_star
+            #self.y_star = y_star
+            #self.y_star_sample = y_star_sample
+            #self.y_star_pdf = y_star_pdf
             
     def fitting(self, data, types, N, M, Iter1 = 100, Iter2 = 500, init_method = 'pca'):
         FLOATING_TYPE = self.FLOATING_TYPE
