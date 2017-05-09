@@ -98,6 +98,7 @@ class sinc_simple10(function):
         self.x_max = np.ones([self.D], dtype = self.FLOATING_TYPE)
         self.x_min = -np.ones([self.D], dtype = self.FLOATING_TYPE)
         self.W = np.random.normal(size = [self.D, 1])
+        self.W = self.W / np.sqrt(np.sum(np.square(self.W)))
         
     def f(self, x):
         return np.sinc(np.pi * np.matmul(x, self.W))

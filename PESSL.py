@@ -196,7 +196,9 @@ class PESSL:
         
         train_step1 = ObjectiveWrapper(self.train_obj, 0)
         train_step2 = ObjectiveWrapper(self.train_obj, 1)
-            
+        
+        tau_lb = 1e-6
+        
         if self.initiated is True:
             prev_obj = np.finfo('float64').max
             cond = True
@@ -204,9 +206,13 @@ class PESSL:
             while(cond):
                 x0 = self.init_params(init_method = init_method)
                 
+                bnds = [(None, None) for x in x0]
+                bnds[-1] = (np.log(tau_lb), None)
+                
                 result = minimize(fun = train_step1,
                                   x0 = x0,
                                   method = method,
+                                  bounds = tuple(bnds),
                                   jac = True,
                                   tol = None,
                                   callback = None,
@@ -219,6 +225,7 @@ class PESSL:
                 result = minimize(fun = train_step2,
                                   x0 = x0,
                                   method = method,
+                                  bounds = tuple(bnds),
                                   jac = True,
                                   tol = None,
                                   callback = None,
@@ -244,10 +251,14 @@ class PESSL:
             
             for n in xrange(fit_iter):
                 x0 = self.init_params(init_method = init_method)
-                    
+                
+                bnds = [(None, None) for x in x0]
+                bnds[-1] = (np.log(tau_lb), None)
+                
                 result = minimize(fun = train_step1,
                                   x0 = x0,
                                   method = method,
+                                  bounds = tuple(bnds),
                                   jac = True,
                                   tol = None,
                                   callback = None,
@@ -260,6 +271,7 @@ class PESSL:
                 result = minimize(fun = train_step2,
                                   x0 = x0,
                                   method = method,
+                                  bounds = tuple(bnds),
                                   jac = True,
                                   tol = None,
                                   callback = None,
@@ -436,7 +448,7 @@ def test():
         #    print EI1[i] - EI2[i]
             
         EI = EI1-EI2
-        print np.max(EI)
+        #print np.max(EI)
         R.iterate(10000, 100)
         EI_scaled = preprocessing.MinMaxScaler((np.min(-1.),np.max(1.))).fit_transform(EI.reshape([-1, 1]))
         fy_scaled = preprocessing.MinMaxScaler((np.min(-1.),np.max(1.))).fit_transform(fy.reshape([-1, 1]))
