@@ -112,7 +112,7 @@ class brainin(function):
         self.x_scale = 0.5 * (self.x_max - self.x_min)
         self.x_bias = (self.x_max + self.x_min) / (self.x_max - self.x_min)
         
-        self.eff_indices = np.random.permutation(10)[0:2]
+        self.eff_indices = np.random.permutation(D)[0:2]
 #        self.eff_vec = np.zeros([D, 1], dtype = self.FLOATING_TYPE)
 #        self.eff_vec[self.eff_indices] = 1.
     
