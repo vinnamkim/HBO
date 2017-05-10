@@ -129,7 +129,11 @@ class BSLBO:
         for param in param_dict.keys():
             feed_dict[self.gp.params[param]] = param_dict[param]
         
-        f, g = self.session.run([self.gp.train_f, self.gp.train_g], feed_dict)
+        try:
+            f, g = self.session.run([self.gp.train_f, self.gp.train_g], feed_dict)
+        except:
+            f = np.finfo('float64').max
+            g = np.array([np.nan for i in xrange(len(x))])
         
         return f, g
         
@@ -189,7 +193,7 @@ class BSLBO:
         
         return np.concatenate([init_value[param].reshape(-1) for param in ['Z', 'mu', 'log_Sigma', 'log_sigma_f', 'log_tau']])
         
-    def fitting(self, init_method = 'pca', method = 'L-BFGS-B', max_iter1 = 100, max_iter2 = 400, fit_iter = 1):
+    def fitting(self, init_method = 'pca', method = 'L-BFGS-B', max_iter1 = 200, max_iter2 = 30, fit_iter = 1):
         M = self.M
         D = self.D
         K = self.K
@@ -197,6 +201,8 @@ class BSLBO:
         train_step1 = ObjectiveWrapper(self.train_obj, 0)
         train_step2 = ObjectiveWrapper(self.train_obj, 1)
             
+        tau_lb = 1e-6
+        
         if self.initiated is True:
             prev_obj = np.finfo('float64').max
             cond = True
@@ -204,9 +210,13 @@ class BSLBO:
             while(cond):
                 x0 = self.init_params(init_method = init_method)
                 
+                bnds = [(None, None) for x in x0]
+                bnds[-1] = (np.log(tau_lb), None)
+                
                 result = minimize(fun = train_step1,
                                   x0 = x0,
                                   method = method,
+                                  bounds = tuple(bnds),
                                   jac = True,
                                   tol = None,
                                   callback = None,
@@ -219,6 +229,7 @@ class BSLBO:
                 result = minimize(fun = train_step2,
                                   x0 = x0,
                                   method = method,
+                                  bounds = tuple(bnds),
                                   jac = True,
                                   tol = None,
                                   callback = None,
@@ -245,9 +256,13 @@ class BSLBO:
             for n in xrange(fit_iter):
                 x0 = self.init_params(init_method = init_method)
                     
+                bnds = [(None, None) for x in x0]
+                bnds[-1] = (np.log(tau_lb), None)
+                
                 result = minimize(fun = train_step1,
                                   x0 = x0,
                                   method = method,
+                                  bounds = tuple(bnds),
                                   jac = True,
                                   tol = None,
                                   callback = None,
@@ -260,6 +275,7 @@ class BSLBO:
                 result = minimize(fun = train_step2,
                                   x0 = x0,
                                   method = method,
+                                  bounds = tuple(bnds),
                                   jac = True,
                                   tol = None,
                                   callback = None,
@@ -418,7 +434,7 @@ def test():
 #    fun = functions.sinc_simple2()
     #fun = functions.sinc_simple10()
     #fun = functions.sinc_simple()
-    R = BSLBO(fun, 2, 10, 1, 0.9, 100, ACQ_FUN = 'EI')
+    R = BSLBO(fun, 2, 10, 1, 0.9, 100, ACQ_FUN = 'UCB')
     
     for i in xrange(10):
         data = R.data
