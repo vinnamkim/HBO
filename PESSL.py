@@ -70,7 +70,7 @@ def x_to_dict(x, M, K, D):
     return result
 
 class PESSL:
-    def __init__(self, fun, K, N, Kr, L, Max_M, ACQ_FUN):
+    def __init__(self, fun, K, N, Max_M, INIT_SAMPLE = 'lhd'):
 #        N = 10
 #        M = 10
 #        K = 1
@@ -81,7 +81,13 @@ class PESSL:
         D = fun.D
         data = {}
         
-        data['X'], data['y'] = fun.evaluate(np.random.uniform(low = -1.0, high = 1.0, size = [N, D]).astype(settings.dtype))
+        if INIT_SAMPLE is 'lhd':
+            from pyDOE import lhs
+            X = 2 * lhs(D, N) - 1
+            data['X'], data['y'] = fun.evaluate(X)
+        else:
+            data['X'], data['y'] = fun.evaluate(np.random.uniform(low = -1.0, high = 1.0, size = [N, D]).astype(settings.dtype))
+            
         data['max_fun'] = np.max(data['y'])
         scaler = preprocessing.MinMaxScaler((-1,1))
                 

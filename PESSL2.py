@@ -6,7 +6,7 @@ Created on Wed Apr  5 15:56:00 2017
 @author: vinnam
 """
 
-from MHGP import MHGP
+from MHGP_PESSL import MHGP
 import numpy as np
 import tensorflow as tf
 from sklearn import preprocessing, decomposition
@@ -69,25 +69,19 @@ def x_to_dict(x, M, K, D):
     
     return result
 
-class BSLBO:
-    def __init__(self, fun, K, N, Kr, L, Max_M, ACQ_FUN, INIT_SAMPLE = 'lhd'):
+class PESSL:
+    def __init__(self, fun, K, N, Kr, L, Max_M, ACQ_FUN):
 #        N = 10
 #        M = 10
 #        K = 1
 #        fun = functions.sinc_simple2()
 #        ACQ_FUN = 'EI'
-        self.FLOATING_TYPE = settings.dtype        
+        self.FLOATING_TYPE = settings.dtype
 
         D = fun.D
         data = {}
         
-        if INIT_SAMPLE is 'lhd':
-            from pyDOE import lhs
-            X = 2 * lhs(D, N) - 1
-            data['X'], data['y'] = fun.evaluate(X)
-        else:
-            data['X'], data['y'] = fun.evaluate(np.random.uniform(low = -1.0, high = 1.0, size = [N, D]).astype(settings.dtype))
-            
+        data['X'], data['y'] = fun.evaluate(np.random.uniform(low = -1.0, high = 1.0, size = [N, D]).astype(settings.dtype))
         data['max_fun'] = np.max(data['y'])
         scaler = preprocessing.MinMaxScaler((-1,1))
                 
@@ -134,7 +128,6 @@ class BSLBO:
         
         for param in param_dict.keys():
             feed_dict[self.gp.params[param]] = param_dict[param]
-        
         try:
             f, g = self.session.run([self.gp.train_f, self.gp.train_g], feed_dict)
         except:
@@ -206,7 +199,7 @@ class BSLBO:
         
         train_step1 = ObjectiveWrapper(self.train_obj, 0)
         train_step2 = ObjectiveWrapper(self.train_obj, 1)
-            
+        
         tau_lb = 1e-6
         
         if self.initiated is True:
@@ -261,7 +254,7 @@ class BSLBO:
             
             for n in xrange(fit_iter):
                 x0 = self.init_params(init_method = init_method)
-                    
+                
                 bnds = [(None, None) for x in x0]
                 bnds[-1] = (np.log(tau_lb), None)
                 
@@ -302,86 +295,61 @@ class BSLBO:
             
         self.l_square = self.session.run(self.gp.l_square, feed_dict)
         
-    def test(self, A, z_star):
+    def test(self, x_star, n_W_star):
         X = self.data[self.types[0]]
         y = self.data[self.types[1]]
-        max_fun = self.data[self.types[2]]
-        beta = self.data['beta']
         
-#        try:
-#            if x_star.shape[1] is not self.D:
-#                print 'Dimension error'
-#                return None
-#        except:
-#            print 'Dimension error'
-        
-        feed_dict = {self.gp.inputs['X'] : X, self.gp.inputs['y'] : y, self.gp.acq_inputs['z_star'] : z_star, self.gp.acq_inputs['A'] : A,
-                     self.gp.acq_inputs['max_fun'] : max_fun, self.gp.acq_inputs['beta'] : beta}
+        feed_dict = {self.gp.inputs['X'] : X, self.gp.inputs['y'] : y, self.gp.x_star : x_star}
         
         for param in self.fitted_params.keys():
             feed_dict[self.gp.params[param]] = self.fitted_params[param]
             
-        mu, var, F_acq = self.session.run([self.gp.mu_star, self.gp.var_star, self.gp.acq_f], feed_dict)
+        mu, var = self.session.run([self.gp.mu_W, self.gp.var_W], feed_dict)
         
-        return [mu, var, F_acq]
+        x_star_entropy2 = np.average([self.session.run(self.gp.y_star_entropy, feed_dict) for i in xrange(n_W_star)], axis = 0)
+        
+        x_star_entropy1 = self.session.run(self.gp.y_star_entropy_ML, feed_dict)
+        
+        #F_acq = x_star_entropy1 - x_star_entropy2
+        
+        return [mu, var, x_star_entropy1, x_star_entropy2]
     
-    def finding_next(self, data, types, A, b, num_sample):
+    def finding_next(self, data, types, num_sample, n_W_star):
         X = self.data[self.types[0]]
         y = self.data[self.types[1]]
-        max_fun = self.data[self.types[2]]
-        beta = self.data['beta']
+        D = self.D
         
-        max_obj = np.finfo(self.FLOATING_TYPE).min
+        max_obj = np.finfo('float64').min
         
         for n in xrange(10):
             try:
-                z_star = sample_enclosingbox(A, b, num_sample / 10)
-                
-#                x_star = np.matmul(z_star, A.transpose())
+                x_star = np.random.uniform(low = -1.0, high = 1.0, size = [num_sample // 10, D])
                 
                 feed_dict = {self.gp.inputs['X'] : X,
                              self.gp.inputs['y'] : y,
-                             self.gp.acq_inputs['z_star'] : z_star,
-                             self.gp.acq_inputs['A'] : A,
-                             self.gp.acq_inputs['max_fun'] : max_fun,
-                             self.gp.acq_inputs['beta'] : beta}
+                             self.gp.x_star : x_star}
                 
                 for param in self.fitted_params.keys():
                     feed_dict[self.gp.params[param]] = self.fitted_params[param]
-                    
-                obj = self.session.run(self.gp.acq_f, feed_dict)
+                
+                x_star_entropy2 = np.average([self.session.run(self.gp.y_star_entropy, feed_dict) for i in xrange(n_W_star)], axis = 0)
+                
+                x_star_entropy1 = self.session.run(self.gp.y_star_entropy_ML, feed_dict)
+                
+                obj = (x_star_entropy1 - x_star_entropy2)
                 
                 temp = np.max(obj)
                 
                 if temp > max_obj:
-                    z_next = z_star[np.argmax(obj)]
+                    x_next = x_star[np.argmax(obj)]
                     max_obj = temp
             except:
                 print 'LLT error'
                 continue
-        self.acq_random = max_obj
-        x0 = z_next
-#        print x0
-        acq_step = ObjectiveWrapper1(self.acq_obj, A)
-        
-#        print acq_step(x0)
-        
-        result = minimize(fun = acq_step,
-                          x0 = x0,
-                          method = 'CG',
-                          jac = True,
-                          tol = None,
-                          callback = None,
-                          options = {'maxiter' : 100})
-        
-#        print result.x
-#        print max_obj, np.negative(result.fun)
-#        print 'Maximized'        
-#        print -result.fun
-        self.acq_result = result
-        return np.reshape(np.matmul(np.reshape(result.x, [1, -1]), A.transpose()), [1, -1]), result.fun
+            
+        return x_next.reshape([1, -1]), max_obj
     
-    def iterate(self, num_sample):
+    def iterate(self, num_sample, n_W_star):
         M = self.M
         D = self.D
         L = self.L
@@ -392,27 +360,10 @@ class BSLBO:
         types = self.types
         scaler = self.scaler
         
-        Mu = self.fitted_params['mu']
-        cond = np.sqrt(self.l_square) > L
-        
-        if np.any(cond):
-            W = Mu[cond, :].reshape([-1, D])
-        else:
-            W = Mu[np.argsort(self.l_square)[0:Kr], :]
-        
-#        print np.sqrt(gp.l_square)
-#        print W.shape
-        
-        W = W.transpose()
-        WT = np.transpose(W)
-        WTW = np.matmul(WT, W)
-        A = np.transpose(np.linalg.solve(WTW, WT)) # D x Ke
-        Ke = A.shape[1]
-        
-        b = np.sqrt(Ke) * np.ones([D, 1])
-        
-        next_x_uncliped, next_x_obj = self.finding_next(data, types, A, b, num_sample)
+        next_x_uncliped, next_x_obj = self.finding_next(data, types, num_sample, n_W_star)
         next_x, next_y = fun.evaluate(next_x_uncliped)
+        
+        #print next_x_obj
         
         data['X'] = np.append(data['X'], next_x, axis = 0)
         data['y'] = np.append(data['y'], next_y, axis = 0)
@@ -432,17 +383,51 @@ class BSLBO:
         self.fitting()
         
         return next_x
+    
+    def iterate_random(self):
+        M = self.M
+        D = self.D
+        L = self.L
+        Kr = self.Kr
+        
+        data = self.data
+        fun = self.fun
+        types = self.types
+        scaler = self.scaler
+        
+        next_x = np.random.uniform(low = -1.0, high = 1.0, size = [1, D])
+        next_x, next_y = fun.evaluate(next_x)
+        
+        data['X'] = np.append(data['X'], next_x, axis = 0)
+        data['y'] = np.append(data['y'], next_y, axis = 0)
+         
+        data['y_scaled'] = scaler.fit_transform(data['y'])
+        
+        data['max_fun'] = np.max(data['y'])
+        data['beta'] = fun.beta(data)
+        
+        M = min(len(data['y']), self.Max_M)
+        N = len(data['y'])
+        
+        self.data = data
+        self.M = M
+        self.N = N
+        
+        self.fitting()
+        
+        return next_x
+        
 
 def test():
     import matplotlib.pyplot as plt
     import functions
-    fun = functions.brainin(20)
-#    fun = functions.sinc_simple2()
-    #fun = functions.sinc_simple10()
+    #fun = functions.brainin(10)
+    #fun = functions.sinc_simple2()
+    fun = functions.sinc_simple10()
     #fun = functions.sinc_simple()
-    R = BSLBO(fun, 5, 20, 5, 0.9, 100, ACQ_FUN = 'UCB')
+    R = PESSL(fun, 2, 5, 1, 0.9, 100, ACQ_FUN = 'EI')
     
-    for i in xrange(0):
+    for i in xrange(20):
         data = R.data
         
     #    W = gp.fitted_params['mu'].transpose()
@@ -460,9 +445,14 @@ def test():
         fx = np.linspace(fx_min, fx_max, num = 100).reshape([100, 1])
         fy = fun.evaluate(Z_to_Xhat(fx, W))[1]
         
-        mu, var, EI = R.test(B, fx)
+        mu, var, EI1, EI2 = R.test(Z_to_Xhat(fx, W), 100)
         
-        next_x = R.iterate(1000)
+        #for i in xrange(len(EI1)):
+        #    print EI1[i] - EI2[i]
+            
+        EI = EI1-EI2
+        #print np.max(EI)
+        R.iterate(10000, 1000)
         EI_scaled = preprocessing.MinMaxScaler((np.min(-1.),np.max(1.))).fit_transform(EI.reshape([-1, 1]))
         fy_scaled = preprocessing.MinMaxScaler((np.min(-1.),np.max(1.))).fit_transform(fy.reshape([-1, 1]))
         y_scaled = preprocessing.MinMaxScaler((np.min(-1.),np.max(1.))).fit_transform(data['y'].reshape([-1, 1]))
@@ -478,13 +468,9 @@ def test():
         plt.scatter(X_to_Z(data['X'][-1], W), -1., marker = 'x', color = 'g')
         plt.title('N is ' + str(len(data['y'])))
         plt.show()
-        print 'EI'
-        print -R.acq_random
-        print -R.acq_result.fun
-        print np.max(EI)
     
     return R
-        
+
 if __name__ == '__main__':
     R = test()
 
