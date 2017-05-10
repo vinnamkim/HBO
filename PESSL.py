@@ -128,8 +128,11 @@ class PESSL:
         
         for param in param_dict.keys():
             feed_dict[self.gp.params[param]] = param_dict[param]
-        
-        f, g = self.session.run([self.gp.train_f, self.gp.train_g], feed_dict)
+        try:
+            f, g = self.session.run([self.gp.train_f, self.gp.train_g], feed_dict)
+        except:
+            f = np.finfo('float64').max
+            g = np.array([np.nan for i in xrange(len(x))])
         
         return f, g
         
@@ -333,7 +336,7 @@ class PESSL:
                 
                 x_star_entropy1 = self.session.run(self.gp.y_star_entropy_ML, feed_dict)
                 
-                obj = x_star_entropy1 - x_star_entropy2
+                obj = (x_star_entropy1 - x_star_entropy2)
                 
                 temp = np.max(obj)
                 
@@ -449,7 +452,7 @@ def test():
             
         EI = EI1-EI2
         #print np.max(EI)
-        R.iterate(10000, 100)
+        R.iterate(10000, 1000)
         EI_scaled = preprocessing.MinMaxScaler((np.min(-1.),np.max(1.))).fit_transform(EI.reshape([-1, 1]))
         fy_scaled = preprocessing.MinMaxScaler((np.min(-1.),np.max(1.))).fit_transform(fy.reshape([-1, 1]))
         y_scaled = preprocessing.MinMaxScaler((np.min(-1.),np.max(1.))).fit_transform(data['y'].reshape([-1, 1]))
