@@ -112,7 +112,7 @@ class PESSL:
         self.data = data
         self.types = types
         self.scaler = scaler
-        
+
         self.Max_M = Max_M
         self.initiated = True
         self.xlist = np.delete(xlist, range(N), axis = 0)
