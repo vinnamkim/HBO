@@ -15,7 +15,7 @@ from sampling import sample_enclosingbox
 def acq_fun(mu_star, var_star, max_fun, beta, method):
     if method is 'EI':
         std_star = tf.sqrt(var_star)
-        dist = tf.contrib.distributions.Normal(mu = mu_star, sigma = std_star)
+        dist = tf.contrib.distributions.Normal(mu = 0., sigma = 1.)
         diff = (mu_star - max_fun)
         Z = diff / tf.sqrt(var_star)
         EI = diff * dist.cdf(Z) + std_star * dist.pdf(Z)

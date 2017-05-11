@@ -7,6 +7,7 @@ Created on Wed Apr  5 15:56:00 2017
 """
 
 from MHGP_PESSL import MHGP
+from GP import GP
 import numpy as np
 import tensorflow as tf
 from sklearn import preprocessing, decomposition
@@ -118,7 +119,7 @@ class PESSL:
         self.xlist = np.delete(xlist, range(N), axis = 0)
         
         gp = MHGP(K, D)
-        
+        gp2 = 
         self.gp = gp
         self.session = tf.Session(graph = self.gp.graph)        
         self.fitting()
