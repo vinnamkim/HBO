@@ -71,7 +71,7 @@ def x_to_dict(x, M, K, D):
     return result
 
 class PESSL:
-    def __init__(self, fun, K, N, Kr, L, Max_M, ACQ_FUN, N_xlist = 10000):
+    def __init__(self, fun, K, N, Max_M, N_xlist = 10000):
 #        N = 10
 #        M = 10
 #        K = 1
@@ -112,14 +112,11 @@ class PESSL:
         self.data = data
         self.types = types
         self.scaler = scaler
-        self.ACQ_FUN = ACQ_FUN
-        self.L = L
-        self.Kr = Kr
         self.Max_M = Max_M
         self.initiated = True
         self.xlist = np.delete(xlist, range(N), axis = 0)
         
-        gp = MHGP(K, D, ACQ_FUN = ACQ_FUN)
+        gp = MHGP(K, D)
         
         self.gp = gp
         self.session = tf.Session(graph = self.gp.graph)        
@@ -247,7 +244,7 @@ class PESSL:
                     cond = False
                     
             self.fitted_params = x_to_dict(result.x, M, K, D)
-            self.initiated = False
+            #self.initiated = False
                 
         else:
             feed_dict = {self.gp.inputs['X'] : self.data[self.types[0]], self.gp.inputs['y'] : self.data[self.types[1]]}
