@@ -7,7 +7,7 @@ Created on Mon Apr  3 15:48:47 2017
 """
 
 dtype = 'float64'
-jitter = 1e-5
+jitter = 1e-6
 
 UCB_a = 1
 UCB_b = 1

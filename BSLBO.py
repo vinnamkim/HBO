@@ -442,7 +442,7 @@ def test():
     #fun = functions.sinc_simple()
     R = BSLBO(fun, 5, 20, 5, 0.9, 100, ACQ_FUN = 'UCB')
     
-    for i in xrange(0):
+    for i in xrange(1):
         data = R.data
         
     #    W = gp.fitted_params['mu'].transpose()

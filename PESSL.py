@@ -112,13 +112,10 @@ class PESSL:
         self.data = data
         self.types = types
         self.scaler = scaler
-        self.ACQ_FUN = ACQ_FUN
-        self.L = L
-        self.Kr = Kr
         self.Max_M = Max_M
         self.initiated = True
         
-        gp = MHGP(K, D, ACQ_FUN = ACQ_FUN)
+        gp = MHGP(K, D)
         
         self.gp = gp
         self.session = tf.Session(graph = self.gp.graph)        
@@ -358,8 +355,6 @@ class PESSL:
     def iterate(self, num_sample, n_W_star):
         M = self.M
         D = self.D
-        L = self.L
-        Kr = self.Kr
         
         data = self.data
         fun = self.fun
@@ -393,8 +388,6 @@ class PESSL:
     def iterate_random(self):
         M = self.M
         D = self.D
-        L = self.L
-        Kr = self.Kr
         
         data = self.data
         fun = self.fun

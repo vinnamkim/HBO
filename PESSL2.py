@@ -14,6 +14,7 @@ from scipy.optimize import minimize
 import settings
 from util_func import X_to_Z, Z_to_Xhat
 from sampling import find_enclosingbox, sample_enclosingbox
+from pyDOE import lhs
 
 class ObjectiveWrapper(object):
     """
@@ -70,18 +71,23 @@ def x_to_dict(x, M, K, D):
     return result
 
 class PESSL:
-    def __init__(self, fun, K, N, Kr, L, Max_M, ACQ_FUN):
+    def __init__(self, fun, K, N, Kr, L, Max_M, ACQ_FUN, N_xlist = 10000):
 #        N = 10
 #        M = 10
 #        K = 1
 #        fun = functions.sinc_simple2()
 #        ACQ_FUN = 'EI'
         self.FLOATING_TYPE = settings.dtype
-
+        
         D = fun.D
+        
+        xlist = 2 * lhs(D, N_xlist) - 1
+        np.random.shuffle(xlist)
+        
         data = {}
         
-        data['X'], data['y'] = fun.evaluate(np.random.uniform(low = -1.0, high = 1.0, size = [N, D]).astype(settings.dtype))
+        data['X'], data['y'] = fun.evaluate(xlist[range(N)])
+        
         data['max_fun'] = np.max(data['y'])
         scaler = preprocessing.MinMaxScaler((-1,1))
                 
@@ -111,6 +117,7 @@ class PESSL:
         self.Kr = Kr
         self.Max_M = Max_M
         self.initiated = True
+        self.xlist = np.delete(xlist, range(N), axis = 0)
         
         gp = MHGP(K, D, ACQ_FUN = ACQ_FUN)
         
@@ -314,54 +321,45 @@ class PESSL:
         
         return [mu, var, x_star_entropy1, x_star_entropy2]
     
-    def finding_next(self, data, types, num_sample, n_W_star):
+    def finding_next(self, data, types, n_W_star):
         X = self.data[self.types[0]]
         y = self.data[self.types[1]]
-        D = self.D
+
+        xlist = self.xlist
         
-        max_obj = np.finfo('float64').min
-        
-        for n in xrange(10):
-            try:
-                x_star = np.random.uniform(low = -1.0, high = 1.0, size = [num_sample // 10, D])
-                
-                feed_dict = {self.gp.inputs['X'] : X,
-                             self.gp.inputs['y'] : y,
-                             self.gp.x_star : x_star}
-                
-                for param in self.fitted_params.keys():
-                    feed_dict[self.gp.params[param]] = self.fitted_params[param]
-                
-                x_star_entropy2 = np.average([self.session.run(self.gp.y_star_entropy, feed_dict) for i in xrange(n_W_star)], axis = 0)
-                
-                x_star_entropy1 = self.session.run(self.gp.y_star_entropy_ML, feed_dict)
-                
-                obj = (x_star_entropy1 - x_star_entropy2)
-                
-                temp = np.max(obj)
-                
-                if temp > max_obj:
-                    x_next = x_star[np.argmax(obj)]
-                    max_obj = temp
-            except:
-                print 'LLT error'
-                continue
+        try:
+            x_star = xlist
             
-        return x_next.reshape([1, -1]), max_obj
+            feed_dict = {self.gp.inputs['X'] : X,
+                         self.gp.inputs['y'] : y,
+                         self.gp.x_star : x_star}
+            
+            for param in self.fitted_params.keys():
+                feed_dict[self.gp.params[param]] = self.fitted_params[param]
+            
+            x_star_entropy2 = np.average([self.session.run(self.gp.y_star_entropy, feed_dict) for i in xrange(n_W_star)], axis = 0)
+            
+            x_star_entropy1 = self.session.run(self.gp.y_star_entropy_ML, feed_dict)
+            
+            obj = (x_star_entropy1 - x_star_entropy2)
+            
+            x_next_idx = np.argmax(obj)
+            
+        except:
+            print 'x_next error'
+            
+        return x_next_idx
     
-    def iterate(self, num_sample, n_W_star):
+    def iterate(self, n_W_star):
         M = self.M
-        D = self.D
-        L = self.L
-        Kr = self.Kr
-        
+        xlist = self.xlist
         data = self.data
         fun = self.fun
         types = self.types
         scaler = self.scaler
         
-        next_x_uncliped, next_x_obj = self.finding_next(data, types, num_sample, n_W_star)
-        next_x, next_y = fun.evaluate(next_x_uncliped)
+        x_next_idx = self.finding_next(data, types, n_W_star)
+        next_x, next_y = fun.evaluate(xlist[[x_next_idx]])
         
         #print next_x_obj
         
@@ -379,6 +377,7 @@ class PESSL:
         self.data = data
         self.M = M
         self.N = N
+        self.xlist = np.delete(xlist, [x_next_idx], axis = 0)
         
         self.fitting()
         
@@ -386,16 +385,12 @@ class PESSL:
     
     def iterate_random(self):
         M = self.M
-        D = self.D
-        L = self.L
-        Kr = self.Kr
-        
+        xlist = self.xlist
         data = self.data
         fun = self.fun
-        types = self.types
         scaler = self.scaler
         
-        next_x = np.random.uniform(low = -1.0, high = 1.0, size = [1, D])
+        next_x = np.random.uniform(xlist[[0]])
         next_x, next_y = fun.evaluate(next_x)
         
         data['X'] = np.append(data['X'], next_x, axis = 0)
@@ -412,6 +407,7 @@ class PESSL:
         self.data = data
         self.M = M
         self.N = N
+        self.xlist = np.delete(xlist, [0], axis = 0)
         
         self.fitting()
         
