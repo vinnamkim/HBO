@@ -68,7 +68,7 @@ def log_barrier(x_star, A, b):
     return tf.reshape(tf.reduce_sum(tf.log(b - Ax) + tf.log(Ax + b), axis = 0), [-1, 1]) # FOR MAXIMIZATION L x 1
     
 class GP:
-    def __init__(self, D, K, LEARNING_RATE = 1e-1, ACQ_FUN = 'EI'):
+    def __init__(self, D, ACQ_FUN = 'EI'):
         self.FLOATING_TYPE = settings.dtype
         self.JITTER_VALUE = settings.jitter
         self.ACQ_FUN = ACQ_FUN
@@ -96,14 +96,11 @@ class GP:
             
             self.params = {'log_length' : log_length, 'log_sigma' : log_sigma, 'log_noise' : log_noise}
             
-            z_star = tf.placeholder(name = 'z_star', shape = [None, K], dtype = FLOATING_TYPE)
-            A = tf.placeholder(name = 'A', shape = [D, K], dtype = FLOATING_TYPE)
+            x_star = tf.placeholder(name = 'z_star', shape = [None, D], dtype = FLOATING_TYPE)
             max_fun = tf.placeholder(name = 'max_fun', shape = [], dtype = FLOATING_TYPE)
             beta = tf.placeholder(name = 'beta', shape = [], dtype = FLOATING_TYPE)
             
-            self.acq_inputs = {'z_star' : z_star, 'A' : A, 'max_fun' : max_fun, 'beta' : beta}
-            
-            x_star = tf.matmul(z_star, tf.transpose(A))
+            self.acq_inputs = {'x_star' : x_star, 'max_fun' : max_fun, 'beta' : beta}
             
             ####### TRANSFORMED VARIABLES #######
             
@@ -134,7 +131,7 @@ class GP:
             self.train_f = -F
             self.train_g = tf.stack(tf.gradients(self.train_f, [log_length, log_sigma, log_noise]), 0)
             self.acq_f = F_acq
-            self.acq_g = tf.gradients(F_acq, z_star)
+            self.acq_g = tf.gradients(F_acq, x_star)
             self.mu_star = mu_star
             self.var_star = var_star
             
