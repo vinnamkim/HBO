@@ -15,7 +15,7 @@ from sampling import sample_enclosingbox
 def acq_fun(mu_star, var_star, max_fun, beta, method):
     if method is 'EI':
         std_star = tf.sqrt(var_star)
-        dist = tf.contrib.distributions.Normal(mu = 0., sigma = 1.)
+        dist = tf.contrib.distributions.Normal(mu = tf.constant(0., dtype = settings.dtype), sigma = tf.constant(1., dtype = settings.dtype))
         diff = (mu_star - max_fun)
         Z = diff / tf.sqrt(var_star)
         EI = diff * dist.cdf(Z) + std_star * dist.pdf(Z)
@@ -24,7 +24,7 @@ def acq_fun(mu_star, var_star, max_fun, beta, method):
         return mu_star + tf.sqrt(beta) * tf.sqrt(var_star)
     
 class MHGP:
-    def __init__(self, K, D, KL_TYPE = 'ML2', LEARNING_RATE = 1e-1, ACQ_FUN = 'EI'):
+    def __init__(self, K, D, KL_TYPE = 'ML2', ACQ_FUN = 'EI'):
         FLOATING_TYPE = settings.dtype
         JITTER_VALUE = settings.jitter
 #        D = 10

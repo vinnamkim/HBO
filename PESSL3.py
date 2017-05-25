@@ -1,9 +1,10 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """
-Created on Wed Apr  5 15:56:00 2017
-
-@author: vinnam
+PESSL3
+H[p(y|x)] : GP_K 사용
+- E_p(W|D)[p(y|D,x,W)] : GP_W 사용
+p(W|D) : MHGP 사용
 """
 
 from MHGP_PESSL import MHGP
@@ -16,60 +17,8 @@ import settings
 from util_func import X_to_Z, Z_to_Xhat
 from sampling import find_enclosingbox, sample_enclosingbox
 from pyDOE import lhs
-
-class ObjectiveWrapper(object):
-    """
-    A simple class to wrap the objective function in order to make it more
-    robust.
-
-    The previously seen state is cached so that we can easily access it if the
-    model crashes.
-    """
-
-    def __init__(self, objective, step):
-        self._objective = objective
-        self._step = step
-        self._previous_x = None
-
-    def __call__(self, x):
-        f, g = self._objective(x)
-        g_is_fin = np.isfinite(g)
-        if self._step == 0:
-            g[-1] = 0.
-            g[-2] = 0.            
-        if np.all(g_is_fin):
-            self._previous_x = x  # store the last known good value
-            return f, g
-        else:
-            print("Warning: inf or nan in gradient: replacing with zeros")
-            return f, np.where(g_is_fin, g, 0.)
-
-class ObjectiveWrapper1(object):
-    def __init__(self, objective, A):
-        self._objective = objective
-        self._A = A
-        self._previous_x = None
-
-    def __call__(self, x):
-        f, g = self._objective(x, self._A)
-        g_is_fin = np.isfinite(g)
-        
-        if np.all(g_is_fin):
-            self._previous_x = x  # store the last known good value
-            return f, g
-        else:
-            print("Warning: inf or nan in gradient: replacing with zeros")
-            return f, np.where(g_is_fin, g, 0.)
-
-def x_to_dict(x, M, K, D):
-    result = {}
-    result['Z'] = x[:(M * K)].reshape([M, K])
-    result['mu'] = x[(M * K) : (M * K + K * D)].reshape([K, D])
-    result['log_Sigma'] = x[(M * K + K * D) : (M * K + 2 * (K * D))].reshape([K, D])
-    result['log_sigma_f'] = x[-2]
-    result['log_tau'] = x[-1]
-    
-    return result
+from utils import ObjectiveWrapper, ObjectiveWrapper1
+import GP_K, GP_W
 
 class PESSL:
     def __init__(self, fun, K, N, Max_M, N_xlist = 10000):
@@ -105,6 +54,7 @@ class PESSL:
         M = min(Max_M, N)
         
         self.fitted_params = {'Z' : None, 'mu' : None, 'log_Sigma' : None, 'log_sigma_f' : None, 'log_tau' : None}
+        self.log_length = None
         self.N = N
         self.M = M
         self.K = K
@@ -118,10 +68,14 @@ class PESSL:
         self.initiated = True
         self.xlist = np.delete(xlist, range(N), axis = 0)
         
-        gp = MHGP(K, D)
-        gp2 = 
-        self.gp = gp
-        self.session = tf.Session(graph = self.gp.graph)        
+        self.mhgp = MHGP(K, D)
+        self.gp_W = GP_W.GP(D)
+        self.gp_K = GP_K.GP(D)
+
+        self.session_mhgp = tf.Session(graph = self.mhgp.graph)
+        self.session_gpW = tf.Session(graph = self.gp_W.graph)
+        self.session_gpK = tf.Session(graph = self.gp_K.graph)
+
         self.fitting()
         
     def train_obj(self, x):
@@ -130,33 +84,46 @@ class PESSL:
         K = self.K
         param_dict = x_to_dict(x, M, K, D)
         
-        feed_dict = {self.gp.inputs['X'] : self.data[self.types[0]], self.gp.inputs['y'] : self.data[self.types[1]]}
+        feed_dict = {self.mhgp.inputs['X'] : self.data[self.types[0]], self.mhgp.inputs['y'] : self.data[self.types[1]]}
         
         for param in param_dict.keys():
-            feed_dict[self.gp.params[param]] = param_dict[param]
+            feed_dict[self.mhgp.params[param]] = param_dict[param]
         try:
-            f, g = self.session.run([self.gp.train_f, self.gp.train_g], feed_dict)
+            f, g = self.session_mhgp.run([self.mhgp.train_f, self.mhgp.train_g], feed_dict)
         except:
             f = np.finfo('float64').max
             g = np.array([np.nan for i in xrange(len(x))])
-        
         return f, g
-        
-    def acq_obj(self, z_star, A):
-        feed_dict = {self.gp.inputs['X'] : self.data[self.types[0]],
-                     self.gp.inputs['y'] : self.data[self.types[1]],
-                     self.gp.acq_inputs['z_star'] : np.reshape(z_star, [1, -1]),
-                     self.gp.acq_inputs['A'] : A,
-                     self.gp.acq_inputs['max_fun'] : self.data[self.types[2]],
-                     self.gp.acq_inputs['beta'] : self.data['beta']}
-        
-        for param in self.fitted_params.keys():
-            feed_dict[self.gp.params[param]] = self.fitted_params[param]
-            
-        f, g = self.session.run([self.gp.acq_f, self.gp.acq_g], feed_dict)
-        
-        return np.negative(f).squeeze(), np.negative(g).squeeze()
-    
+
+    def train_obj_K(self, x):
+        feed_dict = {self.gp_K.inputs['X']: self.data[self.types[0]], self.gp_K.inputs['y']: self.data[self.types[1]],
+                     self.gp_K.params['log_length']: x[0], self.gp_K.params['log_sigma']: x[1],
+                     self.gp_K.params['log_noise']: x[2]}
+
+        f, g = self.session_gpK.run([self.gp_K.train_f, self.gp_K.train_g], feed_dict)
+
+        return f, g
+
+    def entropy_W(self, x_star, W):
+        feed_dict = {self.gp_W.inputs['X'] : self.data[self.types[0]],
+                       self.gp_W.inputs['y'] : self.data[self.types[1]],
+                       self.gp_W.acq_inputs['x_star'] : x_star,
+                       self.gp_W.params['log_sigma'] : self.fitted_params['log_sigma_f'],
+                       self.gp_W.params['log_noise']: self.fitted_params['log_tau'],
+                       self.gp_W.params['W']: W}
+
+        return self.session_gpW.run(self.gp_W.entropy_star, feed_dict)
+
+    def entropy_K(self, x_star):
+        feed_dict = {self.gp_K.inputs['X']: self.data[self.types[0]],
+                       self.gp_K.inputs['y']: self.data[self.types[1]],
+                       self.gp_K.acq_inputs['x_star']: x_star,
+                       self.gp_K.params['log_sigma']: self.fitted_params['log_sigma_f'],
+                       self.gp_K.params['log_noise']: self.fitted_params['log_tau'],
+                       self.gp_K.params['log_length']: self.log_length}
+
+        return self.session_gpK.run(self.gp_K.entropy_star, feed_dict)
+
     def init_params(self, init_method = 'pca'):
         FLOATING_TYPE = self.FLOATING_TYPE
         
@@ -187,140 +154,103 @@ class PESSL:
         init_value['log_Sigma'] = 0.5 * np.log(1 / np.array(D, dtype = FLOATING_TYPE) + (0.001 / np.array(D, dtype = FLOATING_TYPE)) * np.random.normal(size = [K, D]))
         
         init_value['Z'] = np.matmul(X, np.transpose(init_value['mu']))[np.random.permutation(N)[0:M], :]
-        
-#        init_value['Z'] = np.random.uniform(low = -np.sqrt(D), high = np.sqrt(D), size = [M, K])
-        
+
         init_value['log_sigma_f'] = 0.5 * np.log(np.var(y) + 1e-6)
         
         init_value['log_tau'] = init_value['log_sigma_f'] - np.log(1e+3)
-        
-#        print init_value
-        
+
         return np.concatenate([init_value[param].reshape(-1) for param in ['Z', 'mu', 'log_Sigma', 'log_sigma_f', 'log_tau']])
         
-    def fitting(self, init_method = 'pca', method = 'L-BFGS-B', max_iter1 = 200, max_iter2 = 30, fit_iter = 1):
+    def fitting(self, init_method = 'pca', method = 'L-BFGS-B', max_iter1 = 200, max_iter2 = 0, fit_iter = 1):
         M = self.M
         D = self.D
         K = self.K
         
         train_step1 = ObjectiveWrapper(self.train_obj, 0)
         train_step2 = ObjectiveWrapper(self.train_obj, 1)
-        
+        train_step3 = ObjectiveWrapper(self.train_obj_K, 0)
+
         tau_lb = 1e-6
-        
-        if self.initiated is True:
-            prev_obj = np.finfo('float64').max
-            cond = True
-            
-            while(cond):
-                x0 = self.init_params(init_method = init_method)
-                
-                bnds = [(None, None) for x in x0]
-                bnds[-1] = (np.log(tau_lb), None)
-                
-                result = minimize(fun = train_step1,
-                                  x0 = x0,
-                                  method = method,
-                                  bounds = tuple(bnds),
-                                  jac = True,
-                                  tol = None,
-                                  callback = None,
-                                  options = {'maxiter' : max_iter1})
-#                                  options = {'maxiter' : max_iter1, 'gtol' : np.finfo('float64').min})
-            
-                x0 = result.x
-        #        print x0[-2:-1]
-                
-                result = minimize(fun = train_step2,
-                                  x0 = x0,
-                                  method = method,
-                                  bounds = tuple(bnds),
-                                  jac = True,
-                                  tol = None,
-                                  callback = None,
-                                  options = {'maxiter' : max_iter2})
-#                                  options = {'maxiter' : max_iter2, 'gtol' : np.finfo('float64').min})
-                                  #options = {'maxiter' : max_iter2, 'gtol' : np.finfo('float64').min})
-                
-                if result.fun < prev_obj:
-                    cond = False
-                    
-            self.fitted_params = x_to_dict(result.x, M, K, D)
-            #self.initiated = False
-                
-        else:
-            feed_dict = {self.gp.inputs['X'] : self.data[self.types[0]], self.gp.inputs['y'] : self.data[self.types[1]]}
-        
-            for param in self.fitted_params.keys():
-                feed_dict[self.gp.params[param]] = self.fitted_params[param]
-            
-            prev_obj = self.session.run(self.gp.train_f, feed_dict)
-            
-#            print prev_obj
-            
-            for n in xrange(fit_iter):
-                x0 = self.init_params(init_method = init_method)
-                
-                bnds = [(None, None) for x in x0]
-                bnds[-1] = (np.log(tau_lb), None)
-                
-                result = minimize(fun = train_step1,
-                                  x0 = x0,
-                                  method = method,
-                                  bounds = tuple(bnds),
-                                  jac = True,
-                                  tol = None,
-                                  callback = None,
-                                  options = {'maxiter' : max_iter1})
-                                  #options = {'maxiter' : max_iter1, 'gtol' : np.finfo('float64').min})
-            
-                x0 = result.x
-        #        print x0[-2:-1]
-                
-                result = minimize(fun = train_step2,
-                                  x0 = x0,
-                                  method = method,
-                                  bounds = tuple(bnds),
-                                  jac = True,
-                                  tol = None,
-                                  callback = None,
-                                  options = {'maxiter' : max_iter2})
-                
-                if result.fun < prev_obj:
-                    self.fitted_params = x_to_dict(result.x, M, K, D)
-                    prev_obj = result.fun
-            
-#        print prev_obj
+
+        x0 = self.init_params(init_method=init_method)
+
+        bnds = [(None, None) for x in x0]
+        bnds[-1] = (np.log(tau_lb), None)
+
+        result = minimize(fun=train_step1,
+                          x0=x0,
+                          method=method,
+                          bounds=tuple(bnds),
+                          jac=True,
+                          tol=None,
+                          callback=None,
+                          options={'maxiter': max_iter1})
+        #options = {'maxiter' : max_iter1, 'gtol' : np.finfo('float64').min})
+
+        x0 = result.x
+
+        result = minimize(fun=train_step2,
+                          x0=x0,
+                          method=method,
+                          bounds=tuple(bnds),
+                          jac=True,
+                          tol=None,
+                          callback=None,
+                          options={'maxiter': max_iter2})
+
+        self.fitted_params = x_to_dict(result.x, M, K, D)
         
         self.train_result = result
-        
-        feed_dict = {self.gp.inputs['X'] : self.data[self.types[0]], self.gp.inputs['y'] : self.data[self.types[1]]}
+
+        mhgp_loglike = -result.fun
+
+        feed_dict = {self.mhgp.inputs['X'] : self.data[self.types[0]], self.mhgp.inputs['y'] : self.data[self.types[1]]}
         
         for param in self.fitted_params.keys():
-            feed_dict[self.gp.params[param]] = self.fitted_params[param]
+            feed_dict[self.mhgp.params[param]] = self.fitted_params[param]
             
-        self.l_square = self.session.run(self.gp.l_square, feed_dict)
+        self.l_square = self.session_mhgp.run(self.mhgp.l_square, feed_dict)
+
+        x0 = np.random.normal(size = [3])
+        x0[1] = self.fitted_params['log_sigma_f']
+        x0[2] = self.fitted_params['log_tau']
+
+        result = minimize(fun=train_step3,
+                          x0=x0,
+                          method=method,
+                          jac=True,
+                          tol=None,
+                          callback=None,
+                          options={'maxiter': max_iter2})
+
+        self.log_length = result.x[0]
+
+        gpK_loglike = -result.fun
+
+        return mhgp_loglike, gpK_loglike
         
     def test(self, x_star, n_W_star):
         X = self.data[self.types[0]]
         y = self.data[self.types[1]]
-        
-        feed_dict = {self.gp.inputs['X'] : X, self.gp.inputs['y'] : y, self.gp.x_star : x_star}
-        
+
+        feed_dict = {self.mhgp.inputs['X'] : X, self.mhgp.inputs['y'] : y, self.mhgp.x_star : x_star}
+
         for param in self.fitted_params.keys():
-            feed_dict[self.gp.params[param]] = self.fitted_params[param]
-            
-        mu, var = self.session.run([self.gp.mu_W, self.gp.var_W], feed_dict)
-        
-        x_star_entropy2 = np.average([self.session.run(self.gp.y_star_entropy, feed_dict) for i in xrange(n_W_star)], axis = 0)
-        
-        x_star_entropy1 = self.session.run(self.gp.y_star_entropy_ML, feed_dict)
-        
-        #F_acq = x_star_entropy1 - x_star_entropy2
+            feed_dict[self.mhgp.params[param]] = self.fitted_params[param]
+
+        mu, var = self.session_mhgp.run([self.mhgp.mu_W, self.mhgp.var_W], feed_dict)
+
+        loc = self.fitted_params['mu']
+        scale = np.exp(self.fitted_params['log_Sigma'])
+
+        x_star_entropy2 = np.average([self.entropy_W(x_star, np.random.normal(loc, scale)) for i in xrange(n_W_star)],
+                                     axis=0)
+
+        x_star_entropy1 = self.entropy_K(x_star)
         
         return [mu, var, x_star_entropy1, x_star_entropy2]
     
-    def finding_next(self, data, types, n_W_star):
+    def finding_next(self, n_W_star):
         X = self.data[self.types[0]]
         y = self.data[self.types[1]]
 
@@ -328,17 +258,12 @@ class PESSL:
         
         try:
             x_star = xlist
+            loc = self.fitted_params['mu']
+            scale = np.exp(self.fitted_params['log_Sigma'])
+
+            x_star_entropy2 = np.average([self.entropy_W(x_star, np.random.normal(loc, scale)) for i in xrange(n_W_star)], axis = 0)
             
-            feed_dict = {self.gp.inputs['X'] : X,
-                         self.gp.inputs['y'] : y,
-                         self.gp.x_star : x_star}
-            
-            for param in self.fitted_params.keys():
-                feed_dict[self.gp.params[param]] = self.fitted_params[param]
-            
-            x_star_entropy2 = np.average([self.session.run(self.gp.y_star_entropy, feed_dict) for i in xrange(n_W_star)], axis = 0)
-            
-            x_star_entropy1 = self.session.run(self.gp.y_star_entropy_ML, feed_dict)
+            x_star_entropy1 = self.entropy_K(x_star)
             
             obj = (x_star_entropy1 - x_star_entropy2)
             
@@ -357,7 +282,7 @@ class PESSL:
         types = self.types
         scaler = self.scaler
         
-        x_next_idx = self.finding_next(data, types, n_W_star)
+        x_next_idx = self.finding_next(n_W_star)
         next_x, next_y = fun.evaluate(xlist[[x_next_idx]])
         
         #print next_x_obj
@@ -420,9 +345,9 @@ def test():
     #fun = functions.sinc_simple2()
     fun = functions.sinc_simple10()
     #fun = functions.sinc_simple()
-    R = PESSL(fun, 2, 5, 1, 0.9, 100, ACQ_FUN = 'EI')
+    R = PESSL(fun, 1, 5, 100)
     
-    for i in xrange(20):
+    for i in xrange(3):
         data = R.data
         
     #    W = gp.fitted_params['mu'].transpose()
@@ -465,6 +390,16 @@ def test():
         plt.show()
     
     return R
+
+def x_to_dict(x, M, K, D):
+    result = {}
+    result['Z'] = x[:(M * K)].reshape([M, K])
+    result['mu'] = x[(M * K): (M * K + K * D)].reshape([K, D])
+    result['log_Sigma'] = x[(M * K + K * D): (M * K + 2 * (K * D))].reshape([K, D])
+    result['log_sigma_f'] = x[-2]
+    result['log_tau'] = x[-1]
+
+    return result
 
 if __name__ == '__main__':
     R = test()

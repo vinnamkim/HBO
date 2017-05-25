@@ -191,15 +191,25 @@ class BSLBO:
         
 #        init_value['Z'] = np.random.uniform(low = -np.sqrt(D), high = np.sqrt(D), size = [M, K])
         
+        #init_value['log_sigma_f'] = np.array(0.)
+        
+        #init_value['log_tau'] = init_value['log_sigma_f'] - np.log(1e+9)
+        
         init_value['log_sigma_f'] = 0.5 * np.log(np.var(y) + 1e-6)
         
         init_value['log_tau'] = init_value['log_sigma_f'] - np.log(1e+3)
+        
+        #init_value['log_tau'] = init_value['log_sigma_f'] - np.log(1e+9)
+        
+        init_value['log_sigma_f'] = np.array(0.)
+        
+        init_value['log_tau'] = np.log(1e-9)
         
 #        print init_value
         
         return np.concatenate([init_value[param].reshape(-1) for param in ['Z', 'mu', 'log_Sigma', 'log_sigma_f', 'log_tau']])
         
-    def fitting(self, init_method = 'pca', method = 'L-BFGS-B', max_iter1 = 200, max_iter2 = 30, fit_iter = 1):
+    def fitting(self, init_method = 'pca', method = 'L-BFGS-B', max_iter1 = 200, max_iter2 = 0, fit_iter = 1):
         M = self.M
         D = self.D
         K = self.K
@@ -436,13 +446,13 @@ class BSLBO:
 def test():
     import matplotlib.pyplot as plt
     import functions
-    fun = functions.brainin(20)
-#    fun = functions.sinc_simple2()
+    #fun = functions.brainin(20)
+    fun = functions.sinc_simple2()
     #fun = functions.sinc_simple10()
     #fun = functions.sinc_simple()
-    R = BSLBO(fun, 5, 20, 5, 0.9, 100, ACQ_FUN = 'UCB')
+    R = BSLBO(fun, 2, 5, 1, 0.9, 100, ACQ_FUN = 'EI')
     
-    for i in xrange(1):
+    for i in xrange(3):
         data = R.data
         
     #    W = gp.fitted_params['mu'].transpose()
