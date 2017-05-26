@@ -188,7 +188,7 @@ class PESSL:
         #options = {'maxiter' : max_iter1, 'gtol' : np.finfo('float64').min})
 
         x0 = result.x
-
+        '''
         result = minimize(fun=train_step2,
                           x0=x0,
                           method=method,
@@ -197,7 +197,7 @@ class PESSL:
                           tol=None,
                           callback=None,
                           options={'maxiter': max_iter2})
-
+        '''
         self.fitted_params = x_to_dict(result.x, M, K, D)
         
         self.train_result = result
